@@ -8,12 +8,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 
-import {
-  MAX_SPAN_MS,
-  MIN_SPAN_MS,
-  at,
-  clamp,
-} from "../waiting_games/static/games/_interpolate.js";
+import { MAX_SPAN_MS, at, spanFor } from "../waiting_games/static/games/_interpolate.js";
 
 // A snake moving right: the head pushes onto the front, the tail falls off.
 const BEFORE = { cells: [[5, 5], [4, 5], [3, 5]] };
@@ -61,10 +56,51 @@ test("with no previous state at all, a snake is drawn where it is", () => {
   }
 });
 
-test("a stalled or bursting tick is clamped rather than animated literally", () => {
-  // A backgrounded tab hands back a gap of many seconds. Sliding one cell over
-  // eight of them is not smoothness, it is paralysis.
-  assert.equal(clamp(8000, MIN_SPAN_MS, MAX_SPAN_MS), MAX_SPAN_MS);
-  assert.equal(clamp(0, MIN_SPAN_MS, MAX_SPAN_MS), MIN_SPAN_MS);
-  assert.equal(clamp(125, MIN_SPAN_MS, MAX_SPAN_MS), 125);
+// -- the span ---------------------------------------------------------------
+//
+// This is the arithmetic that was making the snake jank, so it gets the most
+// tests. The gap between two arrivals is NOT the span: it carries the server's
+// jitter and the network's, and sliding over a span that is even slightly too
+// long leaves the snake short of the cell when the next state lands -- so it
+// jumps the rest. Round the measurement to a whole number of ticks instead.
+
+test("a jittery arrival still slides over exactly one tick", () => {
+  // The bug, in one assertion. The server ticks every 125ms; the arrival was
+  // 12ms late because it carried the tick that respawned an apple. The old code
+  // took the 137 at face value, and the snake jumped the difference.
+  assert.equal(spanFor(137, 8), 125);
+  assert.equal(spanFor(113, 8), 125);
+  assert.equal(spanFor(125, 8), 125);
+});
+
+test("a state that never arrived is two ticks of travel, not one", () => {
+  // The server drops a frame at a socket that is still busy with the last one --
+  // deliberately, see lobby.stream(). The snake has then moved two cells, and it
+  // must GLIDE them over two ticks rather than snap them in one.
+  assert.equal(spanFor(250, 8), 250);
+  assert.equal(spanFor(261, 8), 250); // ...jitter and all
+  assert.equal(spanFor(375, 8), 375);
+});
+
+test("the span is never less than a single tick", () => {
+  assert.equal(spanFor(0, 8), 125);
+  assert.equal(spanFor(-50, 8), 125);
+  assert.equal(spanFor(3, 8), 125);
+});
+
+test("a faster game is not stretched to a slow game's floor", () => {
+  // There used to be a flat 50ms floor under the span. Pong ticks at 30 Hz, so
+  // its tick is 33.3ms, and that floor would have quietly slowed every slide by
+  // half -- the sort of wrong that looks fine until you measure it.
+  assert.ok(Math.abs(spanFor(33, 30) - 1000 / 30) < 0.01);
+  assert.ok(Math.abs(spanFor(0, 60) - 1000 / 60) < 0.01);
+});
+
+test("a backgrounded tab snaps rather than crawling for eight seconds", () => {
+  assert.equal(spanFor(8000, 8), MAX_SPAN_MS);
+});
+
+test("with no tick rate on the wire, the span still has a sane duration", () => {
+  assert.equal(spanFor(0, undefined), 125);
+  assert.equal(spanFor(130, null), 125);
 });

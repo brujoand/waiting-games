@@ -6,7 +6,7 @@
 
 import { t } from "../i18n.js";
 import { COLOURS, canvas, hint, keys, onChange, swipe } from "./_canvas.js";
-import { MAX_SPAN_MS, MIN_SPAN_MS, at, clamp } from "./_interpolate.js";
+import { ASSUMED_TICK_MS, at, spanFor } from "./_interpolate.js";
 
 // Swipe on a phone; the arrow keys (or WASD) on anything with them.
 const SWIPES = {
@@ -27,11 +27,6 @@ const ARROWS = {
   d: { dir: "right" },
 };
 
-// How long to assume a tick lasts before the server has told us. Replaced by its
-// own tickHz on the very first frame; this exists only so the first slide has
-// some duration at all.
-const ASSUMED_TICK_MS = 125;
-
 export function create({ root, me, send }) {
   // Snake moves ONE WHOLE CELL per tick, at 8 Hz. Drawn at the cell it is on, it
   // therefore teleports a full grid square eight times a second, and no amount of
@@ -51,9 +46,10 @@ export function create({ root, me, send }) {
   const board = canvas(root, (context, side) => {
     if (!latest) return;
 
-    // Measured, not assumed. If a frame is dropped the gap doubles, and the snake
-    // glides two cells over 250ms instead of snapping two cells at once -- the
-    // failure degrades into slowness rather than into a jump.
+    // Clamped at 1: if the next state is late, the snake waits ON a cell rather
+    // than sliding past it into a cell the server has not agreed to yet. A brief
+    // hold is the honest failure -- and because spanFor() is exactly right, the
+    // hold is all you get. There is nothing left over to jump.
     const alpha = span > 0 ? Math.min((performance.now() - arrived) / span, 1) : 1;
     paint(context, side, latest, previous, alpha, me);
   });
@@ -76,11 +72,11 @@ export function create({ root, me, send }) {
       const ticked = latest !== null && game.seconds !== latest.seconds;
 
       if (ticked) {
-        span = clamp(now - arrived, MIN_SPAN_MS, MAX_SPAN_MS);
+        span = spanFor(now - arrived, game.tickHz);
         previous = latest;
         arrived = now;
       } else if (latest === null) {
-        span = game.tickHz ? 1000 / game.tickHz : ASSUMED_TICK_MS;
+        span = spanFor(0, game.tickHz); // nothing measured yet: one tick
         arrived = now;
       }
 
