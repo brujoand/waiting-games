@@ -102,7 +102,7 @@ def identify(cookies) -> Player:
     """Resolve the caller from their session cookie, or refuse to serve them."""
     player = sessions.resolve(cookies.get(COOKIE_NAME))
     if player is None:
-        raise HTTPException(status_code=401, detail="not logged in")
+        raise HTTPException(status_code=401, detail={"code": "auth.not_signed_in"})
     return player
 
 
@@ -135,7 +135,7 @@ async def login(body: dict, response: Response) -> dict:
     try:
         token, player = sessions.login(body.get("name", ""))
     except InvalidName as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exc.as_dict()) from exc
 
     response.set_cookie(
         COOKIE_NAME,
@@ -164,6 +164,9 @@ async def games() -> list[dict]:
     return [
         {
             "key": g.key,
+            # A catalogue for humans and curl. The UI must NEVER render this: it
+            # is English, and the browser names the game from `key` in the
+            # player's own language.
             "title": g.title,
             "minPlayers": g.min_players,
             "maxPlayers": g.max_players,
@@ -182,7 +185,7 @@ async def create_session(body: dict, player: Player = Depends(current_player)) -
     try:
         session = lobby.create(body.get("game", ""), player)
     except InvalidMove as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exc.as_dict()) from exc
     await lobby.broadcast_lobby()
     return session.summary()
 
@@ -194,7 +197,7 @@ async def join_session(
     try:
         session = lobby.join(session_id, player)
     except InvalidMove as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exc.as_dict()) from exc
     # Filling up auto-starts the game, which for Snake or Pong means the clock
     # starts too. launch() is a no-op for anything turn-based.
     await lobby.launch(session)
@@ -211,7 +214,7 @@ async def start_session(
     try:
         session = lobby.begin(session_id, player)
     except InvalidMove as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+        raise HTTPException(status_code=400, detail=exc.as_dict()) from exc
     await lobby.launch(session)
     await lobby.broadcast_state(session)
     await lobby.broadcast_lobby()
@@ -291,7 +294,7 @@ async def game_socket(websocket: WebSocket, session_id: str) -> None:
                     # message is the same amplifier as above.
                     if not realtime:
                         await websocket.send_json(
-                            {"type": "error", "data": {"message": str(exc)}}
+                            {"type": "error", "data": exc.as_dict()}
                         )
                     continue
                 became_final = session.engine.over

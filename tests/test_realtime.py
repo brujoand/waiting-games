@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
+from conftest import rejected
 
 from waiting_games.games import InvalidMove
 from waiting_games.games.pong import BALL_RADIUS, LIVES, PADDLE_HALF, Pong
@@ -72,14 +73,14 @@ def test_steering_is_intent_and_only_lands_on_the_next_tick():
 def test_a_snake_cannot_reverse_into_its_own_neck():
     game = seat(Snake, players=(A,))
 
-    with pytest.raises(InvalidMove, match="reverse straight into yourself"):
+    with rejected("snake.no_reverse"):
         game.apply_move(A, {"dir": "left"})  # it is heading right
 
 
 def test_an_unknown_direction_is_rejected():
     game = seat(Snake, players=(A,))
 
-    with pytest.raises(InvalidMove, match="unknown direction"):
+    with rejected("snake.unknown_direction"):
         game.apply_move(A, {"dir": "sideways"})
 
 
@@ -302,7 +303,7 @@ def test_a_paddle_cannot_leave_its_wall():
 def test_bogus_steering_is_rejected(drift):
     game = seat(Pong)
 
-    with pytest.raises(InvalidMove, match="invalid input"):
+    with rejected("pong.bad_input"):
         game.apply_move(A, {"paddle": drift})
 
 

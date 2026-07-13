@@ -16,8 +16,25 @@ from dataclasses import dataclass
 class InvalidMove(Exception):
     """Raised when a player submits a move the game cannot accept.
 
-    The message is shown to the player, so write it in English.
+    The message is a stable CODE, never a sentence. The browser owns every
+    player-facing word, because the server does not know -- and must not learn --
+    what language the player reads.
+
+    Anything the sentence needs travels in `params` and is interpolated on the
+    client, where the word order is known. A param may only ever be data that
+    needs no translation: a number, an identifier, a player's name. NEVER an
+    English noun -- if you find yourself passing one, you want two codes, not one
+    param, or the sentence is still English and you have only hidden it.
     """
+
+    def __init__(self, code: str, /, **params: object) -> None:
+        # Positional-only, so a game is free to have a param called `code`.
+        super().__init__(code)  # str(exc) is the code: logs and tracebacks stay useful
+        self.code = code
+        self.params = params
+
+    def as_dict(self) -> dict:
+        return {"code": self.code, "params": self.params}
 
 
 @dataclass(frozen=True)
@@ -81,11 +98,11 @@ class Game(ABC):
 
     def add_player(self, player_id: str) -> None:
         if self.started:
-            raise InvalidMove("the game has already started")
+            raise InvalidMove("seat.already_started")
         if self.is_full:
-            raise InvalidMove("the game is full")
+            raise InvalidMove("seat.full")
         if player_id in self.players:
-            raise InvalidMove("you are already in this game")
+            raise InvalidMove("seat.already_joined")
         self.players.append(player_id)
 
     # -- starting --------------------------------------------------------
@@ -93,9 +110,9 @@ class Game(ABC):
     def start(self) -> None:
         """Deal the board. Called once: by the host, or when the game fills up."""
         if self.started:
-            raise InvalidMove("the game has already started")
+            raise InvalidMove("seat.already_started")
         if len(self.players) < self.min_players:
-            raise InvalidMove("not enough players")
+            raise InvalidMove("seat.not_enough_players")
         self.started = True
         self._on_start()
 
@@ -111,15 +128,15 @@ class Game(ABC):
     def apply_move(self, player_id: str, move: dict) -> None:
         """The platform's rules first, then the game's."""
         if self.over:
-            raise InvalidMove("the game is over")
+            raise InvalidMove("move.game_over")
         if not self.started:
-            raise InvalidMove("the game has not started")
+            raise InvalidMove("move.not_started")
 
         seat = self.seat_of(player_id)
         if seat is None:
-            raise InvalidMove("you are not in this game")
+            raise InvalidMove("move.not_seated")
         if not self._may_move(seat):
-            raise InvalidMove("it is not your turn")
+            raise InvalidMove("move.not_your_turn")
 
         self._apply(seat, move)
 

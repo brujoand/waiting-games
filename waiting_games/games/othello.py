@@ -82,11 +82,11 @@ class Othello(Game):
             or not isinstance(cell, int)
             or not 0 <= cell < SIZE * SIZE
         ):
-            raise InvalidMove(f"the cell must be 0-{SIZE * SIZE - 1}")
+            raise InvalidMove("othello.cell_range", max=SIZE * SIZE - 1)
 
         flipped = self._flips(seat, cell)
         if not flipped:
-            raise InvalidMove("that move does not flank any discs")
+            raise InvalidMove("othello.no_flank")
 
         self.board[cell] = MARKS[seat]
         for flip in flipped:

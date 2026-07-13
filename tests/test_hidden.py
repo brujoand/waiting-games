@@ -12,6 +12,7 @@ import json
 import unicodedata
 
 import pytest
+from conftest import rejected
 
 from waiting_games.games import InvalidMove
 from waiting_games.games.battleship import FIRING, HIT, MISS, SIZE, Battleship
@@ -136,7 +137,7 @@ def test_the_setter_cannot_guess_at_their_own_word():
     game = seat(Hangman)
     set_word(game)
 
-    with pytest.raises(InvalidMove, match="it is not your turn"):
+    with rejected("move.not_your_turn"):
         game.apply_move(A, {"letter": "H"})
 
 
@@ -145,7 +146,7 @@ def test_the_same_letter_cannot_be_tried_twice():
     set_word(game, "HUS")
     game.apply_move(B, {"letter": "H"})
 
-    with pytest.raises(InvalidMove, match="already been tried"):
+    with rejected("hangman.already_tried"):
         game.apply_move(B, {"letter": "H"})
 
 
@@ -312,7 +313,7 @@ def test_firing_only_starts_once_both_are_ready():
     game.apply_move(A, {"action": "ready"})
 
     assert game.phase != FIRING
-    with pytest.raises(InvalidMove, match="it is not your turn"):
+    with rejected("move.not_your_turn"):
         game.apply_move(A, {"cell": 0})  # alice is ready, but bob is not
 
     game.apply_move(B, {"action": "ready"})
@@ -350,7 +351,7 @@ def test_you_cannot_shoot_the_same_cell_twice():
     game.apply_move(A, {"cell": 5})
     game.apply_move(B, {"cell": 5})
 
-    with pytest.raises(InvalidMove, match="already fired there"):
+    with rejected("battleship.already_fired"):
         game.apply_move(A, {"cell": 5})
 
 

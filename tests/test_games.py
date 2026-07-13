@@ -9,6 +9,7 @@ engine would have been wrong.
 from __future__ import annotations
 
 import pytest
+from conftest import rejected
 
 from waiting_games.games import InvalidMove
 from waiting_games.games.connectfour import COLS, ROWS, ConnectFour
@@ -77,7 +78,7 @@ def test_a_full_column_is_rejected():
     game = seat(ConnectFour)
     drop(game, [0, 0, 0, 0, 0, 0])  # six discs fill it
 
-    with pytest.raises(InvalidMove, match="the column is full"):
+    with rejected("connectfour.column_full"):
         game.apply_move(game.players[game.turn], {"column": 0})
 
 
@@ -85,7 +86,7 @@ def test_a_full_column_is_rejected():
 def test_a_bogus_column_is_rejected(column):
     game = seat(ConnectFour)
 
-    with pytest.raises(InvalidMove, match="the column must be"):
+    with rejected("connectfour.column_range"):
         game.apply_move(A, {"column": column})
 
 
@@ -107,21 +108,21 @@ def test_taking_the_last_match_wins():
 def test_you_cannot_take_more_than_a_pile_holds():
     game = seat(Nim)
 
-    with pytest.raises(InvalidMove, match="there aren.t that many in the pile"):
+    with rejected("nim.not_that_many"):
         game.apply_move(A, {"pile": 0, "count": 4})  # the first pile holds 3
 
 
 def test_you_must_take_at_least_one():
     game = seat(Nim)
 
-    with pytest.raises(InvalidMove, match="at least one match"):
+    with rejected("nim.take_at_least_one"):
         game.apply_move(A, {"pile": 0, "count": 0})
 
 
 def test_an_unknown_pile_is_rejected():
     game = seat(Nim)
 
-    with pytest.raises(InvalidMove, match="that pile does not exist"):
+    with rejected("nim.no_such_pile"):
         game.apply_move(A, {"pile": 9, "count": 1})
 
 
@@ -153,7 +154,7 @@ def test_a_move_flips_the_discs_it_brackets():
 def test_a_move_that_flips_nothing_is_rejected():
     game = seat(Othello)
 
-    with pytest.raises(InvalidMove, match="does not flank any discs"):
+    with rejected("othello.no_flank"):
         game.apply_move(A, {"cell": cell(0, 0)})
 
 
@@ -239,17 +240,17 @@ def test_an_edge_cannot_be_drawn_twice():
     game = seat(DotsAndBoxes)
     game.apply_move(A, horizontal(0, 0))
 
-    with pytest.raises(InvalidMove, match="already drawn"):
+    with rejected("dotsandboxes.line_drawn"):
         game.apply_move(B, horizontal(0, 0))
 
 
 def test_a_bogus_edge_is_rejected():
     game = seat(DotsAndBoxes)
 
-    with pytest.raises(InvalidMove, match="'h' or 'v'"):
+    with rejected("dotsandboxes.bad_kind"):
         game.apply_move(A, {"kind": "x", "index": 0})
 
-    with pytest.raises(InvalidMove, match="that line does not exist"):
+    with rejected("dotsandboxes.no_such_line"):
         game.apply_move(A, {"kind": "h", "index": 999})
 
 

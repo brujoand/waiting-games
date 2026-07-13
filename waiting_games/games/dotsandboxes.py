@@ -62,15 +62,15 @@ class DotsAndBoxes(Game):
         kind, index = move.get("kind"), move.get("index")
 
         if kind not in ("h", "v"):
-            raise InvalidMove("the line must be 'h' or 'v'")
+            raise InvalidMove("dotsandboxes.bad_kind")
         if isinstance(index, bool) or not isinstance(index, int):
-            raise InvalidMove("the line must be a number")
+            raise InvalidMove("dotsandboxes.line_not_a_number")
 
         edges = self._edges(kind)
         if not 0 <= index < len(edges):
-            raise InvalidMove("that line does not exist")
+            raise InvalidMove("dotsandboxes.no_such_line")
         if edges[index]:
-            raise InvalidMove("that line is already drawn")
+            raise InvalidMove("dotsandboxes.line_drawn")
 
         edges[index] = True
         # Remembered for _next_seat, which runs straight after this.

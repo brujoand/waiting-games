@@ -89,11 +89,11 @@ class Snake(RealTimeGame):
     def _apply(self, seat: int, move: dict) -> None:
         heading = move.get("dir")
         if heading not in DIRECTIONS:
-            raise InvalidMove("unknown direction")
+            raise InvalidMove("snake.unknown_direction")
 
         snake = self.snakes[seat]
         if not snake.alive:
-            raise InvalidMove("your snake is dead")
+            raise InvalidMove("snake.dead")
 
         # No reversing into your own neck. Compare against the direction actually
         # travelled, not the pending one -- otherwise two quick turns in one tick
@@ -101,7 +101,7 @@ class Snake(RealTimeGame):
         dx, dy = DIRECTIONS[heading]
         cx, cy = DIRECTIONS[snake.heading]
         if len(snake.cells) > 1 and (dx, dy) == (-cx, -cy):
-            raise InvalidMove("you cannot reverse straight into yourself")
+            raise InvalidMove("snake.no_reverse")
 
         snake.pending = heading  # tick() is what actually turns the snake
 
