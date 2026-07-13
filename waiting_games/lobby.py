@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import secrets
 import time
 from dataclasses import dataclass, field
@@ -130,10 +131,22 @@ class Session:
             self.watchers.clear()  # a real-time clock parks itself on this
 
 
+def loop_is_running() -> bool:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return False
+    return True
+
+
 class Lobby:
     def __init__(self) -> None:
         self.sessions: dict[str, Session] = {}
         self.lobby_sockets: set = set()
+        # Evictions in flight. asyncio keeps only a WEAK reference to a task, so
+        # a fire-and-forget one can be collected before it has run; holding it
+        # here is what keeps it alive. See drop().
+        self.evictions: set[asyncio.Task] = set()
 
     # -- sessions --------------------------------------------------------
 
@@ -188,6 +201,21 @@ class Lobby:
             raise InvalidMove("lobby.not_host")
         self._start(session)
         return session
+
+    def close(self, session_id: str, player: Player) -> None:
+        """The host deletes their own game, at any stage of its life.
+
+        Deliberately not restricted to a game that has not started: the reason to
+        want this is a game that IS stuck -- an opponent who wandered off mid-play,
+        a board nobody is coming back to. The reaper would get it eventually, but
+        "eventually" is a minute of staring at a lobby full of your own litter.
+
+        drop() is what tells the other players; see there.
+        """
+        session = self.require(session_id)
+        if session.host != player.sub:
+            raise InvalidMove("lobby.not_host")
+        self.drop(session_id)
 
     def _start(self, session: Session) -> None:
         """Start the game and give everyone a fresh window to connect.
@@ -373,14 +401,57 @@ class Lobby:
         return len(stale)
 
     def drop(self, session_id: str) -> None:
-        """Forget a session, and stop its clock if it had one.
+        """Forget a session, stop its clock, and hang up on whoever is watching.
+
+        EVERY way a session dies comes through here -- the host closing it, the
+        reaper collecting it, a new game superseding the host's old waiting one --
+        which is why the eviction belongs here and not in close(). A watcher whose
+        session is merely popped out of the dict is left staring at a board the
+        lobby has forgotten, waiting for a state push that can now never come.
+        Before this, opening a second game in another tab did exactly that to the
+        first one.
 
         A tick task holds a reference to its session, so dropping the session
         without cancelling the task would leave it ticking an orphan forever.
         """
         session = self.sessions.pop(session_id, None)
-        if session is not None and session.tick_task is not None:
+        if session is None:
+            return
+
+        if session.tick_task is not None:
             session.tick_task.cancel()
+
+        # Hanging up has to await a send, and drop() is called from synchronous
+        # code (create, reap). Off to the loop with it -- and if there is no loop
+        # there is no socket either, because a socket only exists inside one.
+        if session.sockets and loop_is_running():
+            task = asyncio.create_task(self.evict(session))
+            self.evictions.add(task)
+            task.add_done_callback(self.evictions.discard)
+
+    async def evict(self, session: Session) -> None:
+        """Tell everyone watching that the game is gone, and hang up.
+
+        The frame first, then the close: the client needs to know WHY it was cut
+        off. A bare disconnect is indistinguishable from the server restarting,
+        and it would send them round the reconnect path instead of back to the
+        lobby with an explanation.
+        """
+        message = {"type": "closed", "data": {"code": "lobby.game_closed"}}
+
+        for entry in list(session.sockets):
+            session.sockets.discard(entry)
+            _, websocket = entry
+            with contextlib.suppress(Exception):  # a dead socket is not an error
+                await websocket.send_json(message)
+                await websocket.close()
+
+        session.note_sockets_changed()
+
+    async def drain(self) -> None:
+        """Settle every eviction in flight. For tests, and for a tidy shutdown."""
+        while self.evictions:
+            await asyncio.gather(*self.evictions, return_exceptions=True)
 
     def shutdown(self) -> None:
         for session_id in list(self.sessions):

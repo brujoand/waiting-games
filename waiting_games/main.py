@@ -259,6 +259,19 @@ async def join_session(
     return session.summary()
 
 
+@app.delete("/api/sessions/{session_id}", status_code=204)
+async def close_session(
+    session_id: str, player: Player = Depends(current_player)
+) -> None:
+    """The host throws their own game away. Anyone watching gets bounced to the
+    lobby by the eviction drop() schedules -- see Lobby.drop."""
+    try:
+        lobby.close(session_id, player)
+    except InvalidMove as exc:
+        raise HTTPException(status_code=400, detail=exc.as_dict()) from exc
+    await lobby.broadcast_lobby()
+
+
 @app.post("/api/sessions/{session_id}/start")
 async def start_session(
     session_id: str, player: Player = Depends(current_player)

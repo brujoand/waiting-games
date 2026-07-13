@@ -116,6 +116,18 @@ button.link {
   text-decoration: underline;
 }
 
+/* Quiet until you reach for it: throwing a game away is rare, and a permanently
+   red button in every row you host would shout louder than the join button. */
+button.danger {
+  color: #c0524e;
+}
+
+button.danger:hover {
+  background: #c0524e;
+  border-color: #c0524e;
+  color: #fff;
+}
+
 button:disabled {
   cursor: default;
 }

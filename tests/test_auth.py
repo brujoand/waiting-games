@@ -6,8 +6,10 @@ never from a request header. See test_a_forged_identity_header_is_ignored.
 
 from __future__ import annotations
 
+import asyncio
+
 import pytest
-from conftest import rejected
+from conftest import Watcher, rejected
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -190,6 +192,87 @@ def test_reap_drops_stale_waiting_games():
     assert board.sessions == {}
 
 
+# -- closing a game you host -------------------------------------------------
+
+
+def test_the_host_can_close_their_own_game():
+    board = Lobby()
+    session = board.create("tictactoe", ALICE)
+    board.join(session.id, BOB)  # started, mid-play
+
+    board.close(session.id, ALICE)
+
+    assert board.sessions == {}
+
+
+def test_only_the_host_may_close_a_game():
+    """The button is only offered to the host. This is the rule behind it -- a
+    guest who forges the request gets nowhere."""
+    board = Lobby()
+    session = board.create("tictactoe", ALICE)
+    board.join(session.id, BOB)
+
+    with rejected("lobby.not_host"):
+        board.close(session.id, BOB)
+
+    assert session.id in board.sessions
+
+
+def test_closing_a_game_that_is_already_gone_is_rejected():
+    board = Lobby()
+
+    with rejected("lobby.no_such_game"):
+        board.close("nope", ALICE)
+
+
+def test_closing_a_game_hangs_up_on_everyone_watching():
+    """The point of the feature. Without the eviction the other player keeps a
+    socket open on a board the lobby has forgotten: no more state pushes will ever
+    arrive, and nothing tells them why."""
+
+    async def scenario():
+        board = Lobby()
+        session = board.create("tictactoe", ALICE)
+        board.join(session.id, BOB)
+
+        watcher = Watcher()
+        session.sockets.add((BOB.sub, watcher))
+        session.note_sockets_changed()
+
+        board.close(session.id, ALICE)
+        await board.drain()
+
+        assert watcher.frames[-1] == {
+            "type": "closed",
+            "data": {"code": "lobby.game_closed"},
+        }, "they were cut off without being told why"
+        assert watcher.closed, "the socket was left open on a dead session"
+
+    asyncio.run(scenario())
+
+
+def test_superseding_your_own_waiting_game_hangs_up_on_it_too():
+    """create() abandons the host's previous waiting game. That drop is the same
+    drop, so it has to tell its watchers the same way -- otherwise starting a
+    second game in another tab silently turns the first tab into a zombie."""
+
+    async def scenario():
+        board = Lobby()
+        first = board.create("tictactoe", ALICE)
+
+        watcher = Watcher()  # the host, still sat on the first game's page
+        first.sockets.add((ALICE.sub, watcher))
+        first.note_sockets_changed()
+
+        board.create("tictactoe", ALICE)
+        await board.drain()
+
+        assert first.id not in board.sessions
+        assert watcher.closed, "the abandoned game left a socket hanging"
+
+    asyncio.run(scenario())
+
+
 # -- the identity contract ---------------------------------------------------
 
 
@@ -325,6 +408,47 @@ def test_only_the_host_may_start_over_http():
 
     assert rejected.status_code == 400
     assert allowed.status_code == 200
+
+
+def test_the_host_closing_a_game_bounces_the_other_player_out():
+    """End to end, over a real socket: the frame explaining why, and then the
+    hang-up. The frame has to come first -- a bare disconnect is what a server
+    restart looks like, and the client would try to reconnect to a game that no
+    longer exists rather than going back to the lobby."""
+    with TestClient(app) as alice_client, TestClient(app) as bob_client:
+        login(alice_client, "alice")
+        login(bob_client, "bob")
+
+        session = alice_client.post("/api/sessions", json={"game": "tictactoe"}).json()
+        bob_client.post(f"/api/sessions/{session['id']}/join")
+
+        with bob_client.websocket_connect(f"/ws/sessions/{session['id']}") as bob_ws:
+            bob_ws.receive_json()  # the board
+
+            closed = alice_client.delete(f"/api/sessions/{session['id']}")
+
+            frame = bob_ws.receive_json()
+            with pytest.raises(WebSocketDisconnect):
+                bob_ws.receive_json()
+
+    assert closed.status_code == 204
+    assert frame == {"type": "closed", "data": {"code": "lobby.game_closed"}}
+
+
+def test_a_guest_cannot_close_someone_elses_game():
+    with TestClient(app) as alice_client, TestClient(app) as bob_client:
+        login(alice_client, "alice")
+        login(bob_client, "bob")
+
+        session = alice_client.post("/api/sessions", json={"game": "tictactoe"}).json()
+        bob_client.post(f"/api/sessions/{session['id']}/join")
+
+        refused = bob_client.delete(f"/api/sessions/{session['id']}")
+        listing = alice_client.get("/api/sessions").json()
+
+    assert refused.status_code == 400
+    assert refused.json()["detail"]["code"] == "lobby.not_host"
+    assert [s["id"] for s in listing] == [session["id"]], "it went anyway"
 
 
 def test_an_anonymous_websocket_is_closed():
