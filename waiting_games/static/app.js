@@ -32,6 +32,7 @@ let gameModule = null;
 let mountedId = null;
 let statusEl = null;
 let startButtonEl = null;
+let closeButtonEl = null;
 // The board's <h2>. mountGame() sets it ONCE, so without a handle it would keep
 // the old language after a switch -- the one place the repaint is easy to miss.
 let titleEl = null;
@@ -157,6 +158,12 @@ function openGameSocket(gameId) {
       renderGame();
     } else if (type === "error") {
       toast(t(data.code, data.params));
+    } else if (type === "closed") {
+      // The game was thrown away under us. The server hangs up right after this,
+      // but it says WHY first -- a bare disconnect looks like a server restart,
+      // and would send us round the reconnect path instead of home.
+      toast(t(data.code, data.params));
+      go("#/");
     }
   };
 
@@ -315,7 +322,36 @@ function renderSessionRow(session) {
     }
   };
 
-  return el("li", {}, [label, action]);
+  // Only the host is offered it, and only the host is allowed it -- the button is
+  // the courtesy, the server is the rule.
+  const buttons = isMine(session)
+    ? [closeButton(session.id), action]
+    : [action];
+
+  return el("li", {}, [label, el("div", { className: "row" }, buttons)]);
+}
+
+function isMine(session) {
+  return session.hostSub === state.me.sub;
+}
+
+function closeButton(sessionId) {
+  const button = el("button", {
+    className: "danger",
+    textContent: t("ui.close_game"),
+  });
+  button.onclick = async () => {
+    // A game with other people in it is not yours alone to bin, so ask. The
+    // browser's own confirm() is ugly and it is also unmissable, which is the
+    // point: there is no undo behind this.
+    if (!window.confirm(t("ui.confirm_close"))) return;
+    try {
+      await api(`/api/sessions/${sessionId}`, { method: "DELETE" });
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+  return button;
 }
 
 export function gameTitle(key) {
@@ -333,6 +369,7 @@ function unmountGame() {
   mountedId = null;
   statusEl = null;
   startButtonEl = null;
+  closeButtonEl = null;
   titleEl = null;
 }
 
@@ -359,6 +396,9 @@ async function renderGame() {
 
   // Whether the host may start is state-dependent, so re-evaluate every push.
   startButtonEl.hidden = !mayStart(game);
+  // Whether you may close it is not -- but the host arrives as a spectator on a
+  // reload, before the first state push says so, so this cannot be set at mount.
+  closeButtonEl.hidden = !isMine(game);
   titleEl.textContent = gameTitle(game.game);
   statusEl.textContent = describeGame(game);
   renderer.update(game);
@@ -382,6 +422,8 @@ async function mountGame(game) {
     }
   };
 
+  closeButtonEl = closeButton(game.id);
+
   appEl.replaceChildren(
     el("section", { className: "panel" }, [
       titleEl,
@@ -390,6 +432,7 @@ async function mountGame(game) {
       el("div", { className: "row" }, [
         startButtonEl,
         el("button", { textContent: t("ui.back_to_lobby"), onclick: () => go("#/") }),
+        closeButtonEl,
       ]),
     ]),
   );

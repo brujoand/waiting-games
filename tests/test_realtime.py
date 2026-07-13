@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 
 import pytest
-from conftest import rejected
+from conftest import Watcher, rejected
 
 from waiting_games.games.pong import BALL_RADIUS, LIVES, PADDLE_HALF, Pong
 from waiting_games.games.snake import HEIGHT, WIDTH, Snake
@@ -396,16 +396,6 @@ def test_an_empty_room_parks_the_clock():
         lobby.drop(session.id)
 
     asyncio.run(scenario())
-
-
-class Watcher:
-    """A socket that just counts what it is sent."""
-
-    def __init__(self) -> None:
-        self.frames: list[dict] = []
-
-    async def send_json(self, message: dict) -> None:
-        self.frames.append(message)
 
 
 class Sluggish:
