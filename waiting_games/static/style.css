@@ -54,6 +54,20 @@ h1 {
   font-size: 0.9rem;
 }
 
+/* The running version. Present, not prominent -- you go looking for it, it does
+   not come looking for you. Deaf to the mouse, so it can never eat a click meant
+   for the board behind it. */
+#version {
+  position: fixed;
+  left: 0.75rem;
+  bottom: 0.6rem;
+  color: var(--muted);
+  opacity: 0.55;
+  font-size: 0.75rem;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  pointer-events: none;
+}
+
 main {
   max-width: 34rem;
   margin: 0 auto;

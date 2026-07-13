@@ -57,6 +57,12 @@ SECURE_COOKIE = os.environ.get("SECURE_COOKIE") == "1"
 # this flag is you asserting it.
 TRUSTED_PROXY_AUTH = os.environ.get("TRUSTED_PROXY_AUTH") == "1"
 
+# Stamped into the image at build time by the Dockerfile's ARG, from the same
+# version semantic-release tagged the image with. "dev" when running from a
+# checkout -- and a DEPLOYED image that says "dev" is telling you its build was
+# wrong, which is worth more than a confident lie.
+VERSION = os.environ.get("APP_VERSION", "dev")
+
 REAP_INTERVAL = 60
 
 lobby = Lobby()
@@ -175,8 +181,12 @@ async def config() -> dict:
     the proxy did not inject its headers, and rendering a name form there would be
     actively wrong. The form would 404 on submit, and the player would be left
     filling in a box that cannot help them.
+
+    The version rides along here rather than on a route of its own: this is
+    already the unauthenticated "what is this server" endpoint, and the badge has
+    to render on the sign-in screen too.
     """
-    return {"authMode": IDENTITY.mode}
+    return {"authMode": IDENTITY.mode, "version": VERSION}
 
 
 @app.post("/api/login")

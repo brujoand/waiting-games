@@ -24,7 +24,7 @@ from waiting_games.auth import (
     display_name,
 )
 from waiting_games.lobby import Lobby
-from waiting_games.main import app, lobby, sessions
+from waiting_games.main import VERSION, app, lobby, sessions
 
 ALICE = Player(sub="p-alice", name="alice")
 BOB = Player(sub="p-bob", name="bob")
@@ -619,12 +619,26 @@ def test_the_websocket_refuses_an_unidentified_connection(proxy_mode):
 
 def test_the_browser_is_told_which_mode_it_is_in(proxy_mode):
     with TestClient(app) as client:
-        assert client.get("/api/config").json() == {"authMode": "proxy"}
+        assert client.get("/api/config").json() == {
+            "authMode": "proxy",
+            "version": VERSION,
+        }
 
 
 def test_the_browser_is_told_about_cookie_mode_too():
     with TestClient(app) as client:
-        assert client.get("/api/config").json() == {"authMode": "cookie"}
+        assert client.get("/api/config").json() == {
+            "authMode": "cookie",
+            "version": VERSION,
+        }
+
+
+def test_a_checkout_calls_itself_dev():
+    """APP_VERSION is stamped into the IMAGE at build time, so its absence means
+    this is not one. Saying so is honest; inventing a number would not be, and a
+    deployed image that somehow reports "dev" is telling you its build was
+    wrong -- which is worth considerably more than a confident lie."""
+    assert VERSION == "dev"
 
 
 @pytest.mark.parametrize(
