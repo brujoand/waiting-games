@@ -7,7 +7,9 @@
 // it on every state push: a real-time game paints from a <canvas> that must
 // survive between frames, and its key listeners must be torn down exactly once.
 
+import { celebrate } from "./celebrate.js";
 import { LANGUAGES, language, setLanguage, t } from "./i18n.js";
+import { setSound, soundOn } from "./sound.js";
 
 const appEl = document.getElementById("app");
 const whoamiEl = document.getElementById("whoami");
@@ -33,9 +35,15 @@ let mountedId = null;
 let statusEl = null;
 let startButtonEl = null;
 let closeButtonEl = null;
+let boardEl = null;
 // The board's <h2>. mountGame() sets it ONCE, so without a handle it would keep
 // the old language after a switch -- the one place the repaint is easy to miss.
 let titleEl = null;
+
+// The game we have already thrown confetti at. A finished game keeps pushing
+// state -- a real-time one does so several times a second -- so without this the
+// fanfare would fire on every frame for as long as the winner sat on the page.
+let celebratedId = null;
 
 // -- helpers ----------------------------------------------------------------
 
@@ -370,7 +378,9 @@ function unmountGame() {
   statusEl = null;
   startButtonEl = null;
   closeButtonEl = null;
+  boardEl = null;
   titleEl = null;
+  celebratedId = null;
 }
 
 // mountGame() awaits a dynamic import, so two state pushes arriving back to back
@@ -402,6 +412,30 @@ async function renderGame() {
   titleEl.textContent = gameTitle(game.game);
   statusEl.textContent = describeGame(game);
   renderer.update(game);
+
+  // The TRANSITION into game-over, not the state of being over. mountGame() has
+  // already claimed the id if the game was finished when we arrived, so a reload
+  // on the results page is silent -- as it should be. Nobody wants a trumpet for
+  // a game they lost ten minutes ago.
+  if (game.over && celebratedId !== game.id) {
+    celebratedId = game.id;
+    celebrate(outcomeOf(game), boardEl);
+  }
+}
+
+function outcomeOf(game) {
+  // A game may know better than the platform, and one does. Solo Snake ends as a
+  // DRAW on the wire -- Result.draw(), because there was nobody to beat -- but
+  // what actually happened is that you crashed. A neutral chime for "you died" is
+  // exactly backwards, so Snake overrides this.
+  const own = gameModule?.outcome?.(game, state.me);
+  if (own) return own;
+
+  // Seat 0 is a real seat and it is also falsy, so this test cannot be `!seat`.
+  if (game.seat === null || game.seat === undefined) return "none";
+
+  if (game.draw) return "draw";
+  return game.winner === state.me.sub ? "win" : "lose";
 }
 
 function mayStart(game) {
@@ -410,8 +444,14 @@ function mayStart(game) {
 
 async function mountGame(game) {
   const board = el("div", { id: "board" });
+  boardEl = board;
   statusEl = el("p", { className: "status" });
   titleEl = el("h2");
+
+  // Arriving at a game that is ALREADY finished -- a reload on the results page,
+  // or following a link to somebody's last move -- is not a thing to celebrate.
+  // Claiming the id here is what makes renderGame() fire on the transition only.
+  if (game.over) celebratedId = game.id;
 
   startButtonEl = el("button", { className: "primary", textContent: t("ui.start_now") });
   startButtonEl.onclick = async () => {
@@ -491,6 +531,25 @@ function mountLanguagePicker() {
   document.querySelector("header").append(picker);
 }
 
+function mountSoundToggle() {
+  const button = el("button", { className: "link", id: "sound" });
+
+  const label = () => {
+    button.textContent = soundOn() ? t("ui.sound_on") : t("ui.sound_off");
+  };
+  button.onclick = () => {
+    setSound(!soundOn());
+    label();
+  };
+  label();
+
+  // In the header beside the language, mounted once, so repaint() never touches
+  // it -- which is also why its label has to be redrawn on a language change by
+  // hand. Same trap as the board title.
+  window.addEventListener("wg:languagechange", label);
+  document.querySelector("header").append(button);
+}
+
 function repaint() {
   // A turn-based game that is simply sitting there gets no state push, so nothing
   // would redraw and the switch would look half-broken. Repaint from the state we
@@ -516,6 +575,7 @@ async function enterLobby() {
 
 async function main() {
   mountLanguagePicker();
+  mountSoundToggle();
   window.addEventListener("wg:languagechange", repaint);
   window.addEventListener("hashchange", () => {
     if (state.me) route();
