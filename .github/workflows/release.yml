@@ -83,8 +83,12 @@ jobs:
         uses: docker/metadata-action@v5
         with:
           images: ghcr.io/brujoand/waiting-games
-          # Deliberately no `latest`: a deployment should name the version it
-          # wants, and a moving tag makes that impossible to do honestly.
+          # No `latest`: a deployment should name the version it wants, and a
+          # moving tag makes that impossible to do honestly. metadata-action
+          # adds `latest` alongside any semver tag unless told not to, so this
+          # flavor line is what actually suppresses it -- not the omission below.
+          flavor: |
+            latest=false
           tags: |
             type=semver,pattern={{version}},value=${{ needs.version.outputs.version }}
             type=semver,pattern={{major}}.{{minor}},value=${{ needs.version.outputs.version }}
