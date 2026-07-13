@@ -161,6 +161,49 @@ button:disabled {
   font-weight: 600;
 }
 
+/* Confetti. Over everything, and deaf to the mouse: it is a decoration, and a
+   decoration that can swallow a click is a bug. */
+.confetti {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  pointer-events: none;
+}
+
+/* The board flinches when you lose. */
+.shaken {
+  animation: shake 0.5s ease-in-out;
+}
+
+@keyframes shake {
+  10%,
+  90% {
+    transform: translateX(-3px);
+  }
+  20%,
+  80% {
+    transform: translateX(5px);
+  }
+  30%,
+  50%,
+  70% {
+    transform: translateX(-8px);
+  }
+  40%,
+  60% {
+    transform: translateX(8px);
+  }
+}
+
+/* celebrate.js already skips the confetti and the shake when this is set. Belt
+   and braces: a transform animation on a board is exactly the kind of thing that
+   makes a motion-sensitive player feel ill, so it is switched off here too. */
+@media (prefers-reduced-motion: reduce) {
+  .shaken {
+    animation: none;
+  }
+}
+
 .grid-3 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
