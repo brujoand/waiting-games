@@ -12,7 +12,6 @@ from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
 from waiting_games.auth import InvalidName, Player, Sessions, clean_name
-from waiting_games.games import InvalidMove
 from waiting_games.lobby import Lobby
 from waiting_games.main import app, lobby, sessions
 

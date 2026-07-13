@@ -7,6 +7,8 @@
 // it on every state push: a real-time game paints from a <canvas> that must
 // survive between frames, and its key listeners must be torn down exactly once.
 
+import { LANGUAGES, language, setLanguage, t } from "./i18n.js";
+
 const appEl = document.getElementById("app");
 const whoamiEl = document.getElementById("whoami");
 const toastEl = document.getElementById("toast");
@@ -29,6 +31,9 @@ let gameModule = null;
 let mountedId = null;
 let statusEl = null;
 let startButtonEl = null;
+// The board's <h2>. mountGame() sets it ONCE, so without a handle it would keep
+// the old language after a switch -- the one place the repaint is easy to miss.
+let titleEl = null;
 
 // -- helpers ----------------------------------------------------------------
 
@@ -54,8 +59,16 @@ async function api(path, options) {
     ...options,
   });
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
-    throw new Error(body.detail || `request failed (${response.status})`);
+    const { detail } = await response.json().catch(() => ({}));
+    // Ours is a coded object. FastAPI's OWN error bodies are not: a 422 detail is
+    // a list and the router's 404 is a string. Neither is translatable, so neither
+    // reaches the player as anything but a status code -- otherwise a Norwegian
+    // user gets [object Object].
+    throw new Error(
+      detail?.code
+        ? t(detail.code, detail.params)
+        : t("error.request_failed", { status: response.status }),
+    );
   }
   return response.status === 204 ? null : response.json();
 }
@@ -142,7 +155,7 @@ function openGameSocket(gameId) {
       state.game = data;
       renderGame();
     } else if (type === "error") {
-      toast(data.message);
+      toast(t(data.code, data.params));
     }
   };
 
@@ -150,7 +163,7 @@ function openGameSocket(gameId) {
   // what a server restart looks like, since all state is in memory.
   gameSocket.onclose = (event) => {
     if (event.code === 1008) {
-      toast("That game is gone (the server may have restarted).");
+      toast(t("ui.gone"));
       go("#/");
     }
   };
@@ -172,12 +185,12 @@ function renderLogin() {
   const input = el("input", {
     id: "name",
     type: "text",
-    placeholder: "Your name",
+    placeholder: t("ui.pick_a_name"),
     maxLength: 24,
     autofocus: true,
   });
 
-  const submit = el("button", { className: "primary", textContent: "Play" });
+  const submit = el("button", { className: "primary", textContent: t("ui.play") });
 
   const form = el("form", { className: "row" }, [input, submit]);
   form.onsubmit = async (event) => {
@@ -195,14 +208,14 @@ function renderLogin() {
 
   appEl.replaceChildren(
     el("section", { className: "panel" }, [
-      el("h2", { textContent: "Pick a name" }),
+      el("h2", { textContent: t("ui.pick_a_name") }),
       form,
     ]),
   );
 }
 
 function renderWhoami() {
-  const signOut = el("button", { className: "link", textContent: "Sign out" });
+  const signOut = el("button", { className: "link", textContent: t("ui.sign_out") });
   signOut.onclick = async () => {
     stopHeartbeat();
     closeSockets();
@@ -223,14 +236,19 @@ function renderHome() {
   for (const game of state.games) {
     const players =
       game.minPlayers === game.maxPlayers
-        ? `${game.maxPlayers} players`
-        : `${game.minPlayers}-${game.maxPlayers} players`;
+        ? t("ui.players_exact", { max: game.maxPlayers })
+        : t("ui.players_range", { min: game.minPlayers, max: game.maxPlayers });
     picker.append(
-      el("option", { value: game.key, textContent: `${game.title} (${players})` }),
+      el("option", {
+        value: game.key,
+        // The server's `title` is English and must never be rendered; the game is
+        // named here, from its key, in the player's own language.
+        textContent: t("ui.game_with_players", { game: gameTitle(game.key), players }),
+      }),
     );
   }
 
-  const start = el("button", { className: "primary", textContent: "Start game" });
+  const start = el("button", { className: "primary", textContent: t("ui.start_game") });
   start.onclick = async () => {
     try {
       const session = await api("/api/sessions", {
@@ -245,15 +263,15 @@ function renderHome() {
 
   appEl.replaceChildren(
     el("section", { className: "panel" }, [
-      el("h2", { textContent: "New game" }),
+      el("h2", { textContent: t("ui.new_game") }),
       el("div", { className: "row" }, [picker, start]),
     ]),
     el("section", { className: "panel" }, [
-      el("h2", { textContent: "Join a game" }),
+      el("h2", { textContent: t("ui.join_a_game") }),
       state.sessions.length === 0
         ? el("p", {
             className: "empty",
-            textContent: "No games waiting. Start one.",
+            textContent: t("ui.nothing_waiting"),
           })
         : el("ul", { className: "sessions" }, state.sessions.map(renderSessionRow)),
     ]),
@@ -262,15 +280,21 @@ function renderHome() {
 
 function renderSessionRow(session) {
   const label = el("div", {}, [
-    el("strong", { textContent: session.title }),
+    el("strong", { textContent: gameTitle(session.game) }),
     el("span", {
       className: "meta",
-      textContent: ` ${session.host} - ${session.seats} - ${describeStatus(session)}`,
+      textContent:
+        " " +
+        t("ui.session_line", {
+          host: session.host,
+          seats: session.seats,
+          status: t(`ui.status.${session.status}`),
+        }),
     }),
   ]);
 
   const action = el("button", {
-    textContent: session.joinable ? "Join" : "Watch",
+    textContent: session.joinable ? t("ui.join") : t("ui.watch"),
   });
   action.onclick = async () => {
     try {
@@ -286,10 +310,8 @@ function renderSessionRow(session) {
   return el("li", {}, [label, action]);
 }
 
-function describeStatus(session) {
-  if (session.status === "waiting") return "waiting";
-  if (session.status === "active") return "in progress";
-  return "finished";
+export function gameTitle(key) {
+  return t(`game.${key}.title`);
 }
 
 // -- game screen ------------------------------------------------------------
@@ -303,6 +325,7 @@ function unmountGame() {
   mountedId = null;
   statusEl = null;
   startButtonEl = null;
+  titleEl = null;
 }
 
 // mountGame() awaits a dynamic import, so two state pushes arriving back to back
@@ -328,6 +351,7 @@ async function renderGame() {
 
   // Whether the host may start is state-dependent, so re-evaluate every push.
   startButtonEl.hidden = !mayStart(game);
+  titleEl.textContent = gameTitle(game.game);
   statusEl.textContent = describeGame(game);
   renderer.update(game);
 }
@@ -339,8 +363,9 @@ function mayStart(game) {
 async function mountGame(game) {
   const board = el("div", { id: "board" });
   statusEl = el("p", { className: "status" });
+  titleEl = el("h2");
 
-  startButtonEl = el("button", { className: "primary", textContent: "Start now" });
+  startButtonEl = el("button", { className: "primary", textContent: t("ui.start_now") });
   startButtonEl.onclick = async () => {
     try {
       await api(`/api/sessions/${game.id}/start`, { method: "POST" });
@@ -351,12 +376,12 @@ async function mountGame(game) {
 
   appEl.replaceChildren(
     el("section", { className: "panel" }, [
-      el("h2", { textContent: game.title }),
+      titleEl,
       statusEl,
       board,
       el("div", { className: "row" }, [
         startButtonEl,
-        el("button", { textContent: "Back to lobby", onclick: () => go("#/") }),
+        el("button", { textContent: t("ui.back_to_lobby"), onclick: () => go("#/") }),
       ]),
     ]),
   );
@@ -369,8 +394,10 @@ async function mountGame(game) {
 
 function describeGame(game) {
   if (game.status === "waiting") {
-    const waiting = `Waiting for more players (${game.seats})`;
-    return mayStart(game) ? `${waiting}. You can start whenever you like.` : `${waiting}...`;
+    const waiting = t("ui.waiting_for_players", { seats: game.seats });
+    return mayStart(game)
+      ? t("ui.you_may_start", { waiting })
+      : t("ui.still_waiting", { waiting });
   }
 
   // A game may describe itself: scores, phases, whose word it is.
@@ -378,23 +405,53 @@ function describeGame(game) {
   if (own) return own;
 
   if (game.over) {
-    if (game.draw) return "A draw.";
+    if (game.draw) return t("ui.draw");
     return game.winner === state.me.sub
-      ? "You win!"
-      : `${game.playerNames[game.winner]} wins.`;
+      ? t("ui.you_won")
+      : t("ui.they_won", { name: game.playerNames[game.winner] });
   }
 
   const others = Object.keys(game.playerNames).filter((sub) => sub !== state.me.sub);
   const missing = others.filter((sub) => !game.connected.includes(sub));
   const dropped = missing.length
-    ? ` (${missing.map((sub) => game.playerNames[sub]).join(", ")} disconnected)`
+    ? t("ui.disconnected", {
+        names: missing.map((sub) => game.playerNames[sub]).join(", "),
+      })
     : "";
 
   const turn =
     game.turn === state.me.sub
-      ? "Your turn"
-      : `${game.playerNames[game.turn]}'s turn`;
+      ? t("ui.your_turn")
+      : t("ui.their_turn", { name: game.playerNames[game.turn] });
   return turn + dropped;
+}
+
+// -- language ---------------------------------------------------------------
+
+function mountLanguagePicker() {
+  // In the header, not in renderWhoami(): it has to be reachable from the LOGIN
+  // screen too, which is exactly where a Norwegian speaker first meets English.
+  const picker = el("select", { id: "lang", title: t("ui.language") });
+  for (const { code, label } of LANGUAGES) {
+    picker.append(el("option", { value: code, textContent: label }));
+  }
+  picker.value = language();
+  picker.onchange = () => setLanguage(picker.value);
+  document.querySelector("header").append(picker);
+}
+
+function repaint() {
+  // A turn-based game that is simply sitting there gets no state push, so nothing
+  // would redraw and the switch would look half-broken. Repaint from the state we
+  // already hold.
+  //
+  // renderGame() does NOT remount (mountedId is unchanged), so a canvas game's
+  // rAF loop and key listeners survive -- which is the whole point of the
+  // mount-once contract.
+  if (!state.me) return renderLogin();
+  renderWhoami();
+  if (state.game && currentGameId()) renderGame();
+  else renderHome();
 }
 
 // -- boot -------------------------------------------------------------------
@@ -407,6 +464,8 @@ async function enterLobby() {
 }
 
 async function main() {
+  mountLanguagePicker();
+  window.addEventListener("wg:languagechange", repaint);
   window.addEventListener("hashchange", () => {
     if (state.me) route();
   });

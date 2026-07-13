@@ -4,6 +4,7 @@
 // paints from it. That is what keeps an 8 Hz state stream from stuttering a
 // 60 Hz screen, and what stops the canvas being rebuilt on every push.
 
+import { t } from "../i18n.js";
 import { COLOURS, canvas, keys } from "./_canvas.js";
 
 const ARROWS = {
@@ -85,7 +86,7 @@ export function describe(game, me) {
     if (solo) {
       return `You survived ${game.seconds} seconds and grew to ${mine.length} long.`;
     }
-    if (game.draw) return "Everyone crashed. Draw.";
+    if (game.draw) return t("snake.all_crashed");
     return game.winner === me.sub
       ? `You are the last snake alive! Length ${mine.length}.`
       : `${game.playerNames[game.winner]} won.`;
@@ -94,11 +95,11 @@ export function describe(game, me) {
   const alive = game.snakes.filter((snake) => snake.alive).length;
   const you = mine
     ? mine.alive
-      ? `Length ${mine.length}`
-      : "You crashed"
-    : "You are watching";
+      ? t("snake.length", { length: mine.length })
+      : t("snake.you_crashed")
+    : t("snake.watching");
 
   return solo
-    ? `${you}. ${game.seconds} seconds.`
-    : `${you}. ${alive} snakes alive. Use the arrow keys.`;
+    ? t("snake.solo_status", { you, seconds: game.seconds })
+    : t("snake.status", { you, alive });
 }

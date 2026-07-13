@@ -52,7 +52,9 @@ def test_every_error_is_raised_with_a_code_not_a_sentence():
         elif not CODE.match(first.value):
             offenders.append(f"{path}:{node.lineno} -- {first.value!r} is not a code")
 
-    assert not offenders, "errors must carry a code, not prose:\n" + "\n".join(offenders)
+    assert not offenders, "errors must carry a code, not prose:\n" + "\n".join(
+        offenders
+    )
 
 
 def test_error_codes_are_not_positional_beyond_the_code():
@@ -60,6 +62,47 @@ def test_error_codes_are_not_positional_beyond_the_code():
     with an argument stapled to it."""
     for path, node in raise_sites():
         assert len(node.args) == 1, f"{path}:{node.lineno} -- params must be keywords"
+
+
+I18N = SOURCE / "static" / "i18n.js"
+
+# Keys out of a flat `const en = { "a.b": "...", ... }` object literal. This
+# couples the test to the file's shape, which is the price of catching the one
+# failure that actually reaches a player: a raw `othello.no_flank` on their
+# screen. i18n.js's header comment records the constraint.
+KEY = re.compile(r'^\s*"([a-z][a-z0-9_.]*)":', re.MULTILINE)
+
+
+def dictionary(name: str) -> set[str]:
+    source = I18N.read_text()
+    start = source.index(f"const {name} = {{")
+    end = source.index("\n};", start)
+    return set(KEY.findall(source[start:end]))
+
+
+def test_every_code_the_server_can_raise_has_an_english_string():
+    """A code with no string renders as the code. The player sees
+    `othello.no_flank` instead of a sentence, which is the exact thing this whole
+    refactor exists to avoid."""
+    english = dictionary("en")
+    missing = sorted(
+        {
+            node.args[0].value
+            for _, node in raise_sites()
+            if node.args and isinstance(node.args[0], ast.Constant)
+        }
+        - english
+    )
+
+    assert not missing, f"no English string for: {missing}"
+
+
+def test_norwegian_says_everything_english_does():
+    """A missing string falls back to English rather than going blank -- so this
+    degrades instead of breaking, but it is still a half-translated page."""
+    missing = sorted(dictionary("en") - dictionary("nb"))
+
+    assert not missing, f"no Norwegian string for: {missing}"
 
 
 @pytest.mark.parametrize("game_class", list(GAMES.values()), ids=list(GAMES))

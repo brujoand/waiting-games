@@ -13,7 +13,6 @@ import asyncio
 import pytest
 from conftest import rejected
 
-from waiting_games.games import InvalidMove
 from waiting_games.games.pong import BALL_RADIUS, LIVES, PADDLE_HALF, Pong
 from waiting_games.games.snake import HEIGHT, WIDTH, Snake
 from waiting_games.lobby import Lobby, Player

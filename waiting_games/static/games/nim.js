@@ -1,5 +1,7 @@
 // Nim. Click a match to take it and everything to its right in that pile.
 
+import { t } from "../i18n.js";
+
 export function create({ root, me, send }) {
   root.className = "board-nim";
 
@@ -19,7 +21,7 @@ export function create({ root, me, send }) {
             // Taking the i-th match takes it and every one after it, which is
             // how you pick "how many" without a number input.
             match.onclick = () => send({ pile, count: count - i });
-            match.title = `Take ${count - i}`;
+            match.title = t("nim.take", { count: count - i });
             row.append(match);
           }
 
@@ -27,7 +29,7 @@ export function create({ root, me, send }) {
             row.append(
               Object.assign(document.createElement("span"), {
                 className: "nim-empty",
-                textContent: "empty",
+                textContent: t("nim.empty"),
               }),
             );
           }
@@ -44,8 +46,8 @@ export function create({ root, me, send }) {
 export function describe(game, me) {
   if (game.over && !game.draw) {
     return game.winner === me.sub
-      ? "You took the last match. You won!"
-      : `${game.playerNames[game.winner]} took the last match and won.`;
+      ? t("nim.you_took_the_last")
+      : t("nim.they_took_the_last", { name: game.playerNames[game.winner] });
   }
   return null; // the platform's default is fine otherwise
 }

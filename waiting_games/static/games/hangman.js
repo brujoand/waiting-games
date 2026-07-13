@@ -4,13 +4,17 @@
 // only ever reaches the setter's browser -- the server masks it for everyone
 // else, so there is nothing here to hide.
 
+import { t } from "../i18n.js";
+import { who } from "./_score.js";
+
+// Keys, in the order the gallows is drawn.
 const GALLOWS = [
   "head",
   "body",
-  "left arm",
-  "right arm",
-  "left leg",
-  "right leg",
+  "left_arm",
+  "right_arm",
+  "left_leg",
+  "right_leg",
   "rope",
 ];
 
@@ -27,7 +31,7 @@ export function create({ root, me, send }) {
         setting
           ? iAmSetter
             ? wordForm(send)
-            : note(`Waiting for ${game.playerNames[game.setter]} to set a word...`)
+            : note(t("hangman.waiting_for_setter", { name: game.playerNames[game.setter] }))
           : play(game, me, send, iAmSetter),
       );
     },
@@ -48,8 +52,14 @@ function play(game, me, send, iAmSetter) {
   const man = document.createElement("p");
   man.className = "hm-gallows";
   man.textContent = game.wrong.length
-    ? `Gallows: ${GALLOWS.slice(0, game.wrong.length).join(", ")} (${game.wrong.length}/${game.maxWrong})`
-    : `The gallows are empty (0/${game.maxWrong})`;
+    ? t("hangman.gallows", {
+        parts: GALLOWS.slice(0, game.wrong.length)
+          .map((part) => t(`hangman.part.${part}`))
+          .join(", "),
+        wrong: game.wrong.length,
+        max: game.maxWrong,
+      })
+    : t("hangman.gallows_empty", { max: game.maxWrong });
   wrap.append(man);
 
   const keys = document.createElement("div");
@@ -69,7 +79,7 @@ function play(game, me, send, iAmSetter) {
   wrap.append(keys);
 
   if (iAmSetter) {
-    wrap.append(note("You set the word, so you sit this round out."));
+    wrap.append(note(t("hangman.you_set_it")));
   }
   return wrap;
 }
@@ -80,14 +90,14 @@ function wordForm(send) {
 
   const input = document.createElement("input");
   input.type = "text";
-  input.placeholder = "Type a word";
+  input.placeholder = t("hangman.type_a_word");
   input.autocomplete = "off";
   input.maxLength = 20;
 
   const button = document.createElement("button");
   button.className = "primary";
   button.type = "submit";
-  button.textContent = "Set the word";
+  button.textContent = t("hangman.set_the_word");
 
   form.onsubmit = (event) => {
     event.preventDefault();
@@ -102,8 +112,13 @@ function wordForm(send) {
 function previously(game) {
   if (!game.previous) return document.createComment("");
   const { word, solved, setter } = game.previous;
-  const outcome = solved ? "was guessed" : "was not guessed";
-  return note(`Previous word (${game.playerNames[setter]}): ${word} - ${outcome}.`);
+  return note(
+    t("hangman.previous", {
+      name: game.playerNames[setter],
+      word,
+      outcome: solved ? t("hangman.was_guessed") : t("hangman.was_not_guessed"),
+    }),
+  );
 }
 
 function note(text) {
@@ -117,22 +132,28 @@ export function describe(game, me) {
   if (game.status !== "active") return null;
 
   const score = Object.entries(game.counts)
-    .map(([sub, n]) => `${sub === me.sub ? "You" : game.playerNames[sub]} ${n}`)
+    .map(([sub, n]) => `${who(game, me, sub)} ${n}`)
     .join(" - ");
-  const round = `Round ${game.round}/${game.rounds}`;
+  const round = t("hangman.round", { round: game.round, rounds: game.rounds });
 
   if (game.over) {
-    if (game.draw) return `${score}. Draw.`;
-    const who = game.winner === me.sub ? "You" : game.playerNames[game.winner];
-    return `${score}. ${who} won.`;
+    if (game.draw) return `${score}. ${t("ui.draw")}`;
+    return game.winner === me.sub
+      ? `${score}. ${t("ui.you_won")}`
+      : `${score}. ${t("ui.they_won", { name: game.playerNames[game.winner] })}`;
   }
 
   if (game.phase === "setting") {
-    const who = game.setter === me.sub ? "You are setting" : `${game.playerNames[game.setter]} is setting`;
-    return `${round}. ${who} the word. ${score}.`;
+    const setter =
+      game.setter === me.sub
+        ? t("hangman.you_set")
+        : t("hangman.they_set", { name: game.playerNames[game.setter] });
+    return `${round}. ${setter}. ${score}.`;
   }
 
   const turn =
-    game.turn === me.sub ? "Your turn" : `${game.playerNames[game.turn]} is guessing`;
+    game.turn === me.sub
+      ? t("ui.your_turn")
+      : t("hangman.they_guess", { name: game.playerNames[game.turn] });
   return `${round}. ${turn}. ${score}.`;
 }
