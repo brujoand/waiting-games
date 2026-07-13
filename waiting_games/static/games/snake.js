@@ -5,7 +5,15 @@
 // 60 Hz screen, and what stops the canvas being rebuilt on every push.
 
 import { t } from "../i18n.js";
-import { COLOURS, canvas, keys } from "./_canvas.js";
+import { COLOURS, canvas, keys, onChange, swipe } from "./_canvas.js";
+
+// Swipe on a phone; the arrow keys (or WASD) on anything with them.
+const SWIPES = {
+  up: { dir: "up" },
+  down: { dir: "down" },
+  left: { dir: "left" },
+  right: { dir: "right" },
+};
 
 const ARROWS = {
   ArrowUp: { dir: "up" },
@@ -21,18 +29,23 @@ const ARROWS = {
 export function create({ root, me, send }) {
   let latest = null;
 
-  const stopPainting = canvas(root, (context, side) => {
+  const board = canvas(root, (context, side) => {
     if (latest) paint(context, side, latest, me);
   });
-  const stopListening = keys(ARROWS, send);
+
+  // One deduper, both inputs. A swipe and a key press are the same intent.
+  const intend = onChange(send);
+  const stopKeys = keys(ARROWS, intend);
+  const stopSwipe = swipe(board.element, intend, SWIPES);
 
   return {
     update(game) {
       latest = game;
     },
     destroy() {
-      stopPainting();
-      stopListening();
+      board.destroy();
+      stopKeys();
+      stopSwipe();
     },
   };
 }
@@ -84,12 +97,12 @@ export function describe(game, me) {
 
   if (game.over) {
     if (solo) {
-      return `You survived ${game.seconds} seconds and grew to ${mine.length} long.`;
+      return t("snake.solo_over", { seconds: game.seconds, length: mine.length });
     }
     if (game.draw) return t("snake.all_crashed");
     return game.winner === me.sub
-      ? `You are the last snake alive! Length ${mine.length}.`
-      : `${game.playerNames[game.winner]} won.`;
+      ? t("snake.you_survived", { length: mine.length })
+      : t("ui.they_won", { name: game.playerNames[game.winner] });
   }
 
   const alive = game.snakes.filter((snake) => snake.alive).length;

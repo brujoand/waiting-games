@@ -168,13 +168,13 @@ const en = {
   "snake.length": "Length {length}",
   "snake.you_crashed": "You crashed",
   "snake.watching": "You are watching",
-  "snake.solo_status": "{you}. {seconds} seconds.",
-  "snake.status": "{you}. {alive} snakes alive. Use the arrow keys.",
+  "snake.solo_status": "{you}. {seconds} seconds. Swipe, or use the arrow keys.",
+  "snake.status": "{you}. {alive} snakes alive. Swipe, or use the arrow keys.",
 
   "pong.bad_input": "Invalid input.",
   "pong.out": "You are out of the game.",
   "pong.out_short": "out",
-  "pong.hint": "The arrow keys steer. Your wall is at the bottom.",
+  "pong.hint": "Hold a side of the board, or use the arrow keys. Your wall is at the bottom.",
   "pong.you_are_out": "You are out.",
   "pong.watching": "You are watching.",
 };
@@ -339,13 +339,13 @@ const nb = {
   "snake.length": "Lengde {length}",
   "snake.you_crashed": "Du krasjet",
   "snake.watching": "Du ser på",
-  "snake.solo_status": "{you}. {seconds} sekunder.",
-  "snake.status": "{you}. {alive} slanger i live. Bruk piltastene.",
+  "snake.solo_status": "{you}. {seconds} sekunder. Sveip, eller bruk piltastene.",
+  "snake.status": "{you}. {alive} slanger i live. Sveip, eller bruk piltastene.",
 
   "pong.bad_input": "Ugyldig styring.",
   "pong.out": "Du er ute av spillet.",
   "pong.out_short": "ute",
-  "pong.hint": "Piltastene styrer. Veggen din er nederst.",
+  "pong.hint": "Hold på en side av brettet, eller bruk piltastene. Veggen din er nederst.",
   "pong.you_are_out": "Du er ute.",
   "pong.watching": "Du ser på.",
 };

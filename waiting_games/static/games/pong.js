@@ -1,40 +1,69 @@
 // Pong, for two to four.
 //
 // Your own wall is always drawn at the BOTTOM, whichever wall the server gave
-// you -- so left/right always means left/right to your hands. The board is
-// rotated to suit you; the physics is not.
+// you. The board is rotated to suit you; the physics is not.
+//
+// Which means the controls have to be rotated too, and that is the subtle bit.
+// The server's `paddle: +1` moves your paddle along its wall in world terms --
+// and for two of the four walls, that rotation turns "along the wall" into
+// "leftwards on your screen". Sending +1 when the player asked for right would
+// then move the paddle left, which is exactly as unplayable as it sounds.
+//
+// So the sign is DERIVED from ROTATION rather than written down beside it. A
+// second table could silently disagree with the first; this cannot.
 
 import { t } from "../i18n.js";
-import { COLOURS, canvas, keys } from "./_canvas.js";
+import { COLOURS, canvas, halves, keys, onChange } from "./_canvas.js";
+import { ROTATION, screenSign } from "./_geometry.js";
 
-const STEER = {
-  ArrowLeft: { paddle: -1 },
-  ArrowRight: { paddle: 1 },
-  ArrowUp: { paddle: -1 },
-  ArrowDown: { paddle: 1 },
-  a: { paddle: -1 },
-  d: { paddle: 1 },
-};
+// What the player asked for, on their own screen.
+const LEFT = { paddle: -1 };
+const RIGHT = { paddle: 1 };
 const STOP = { paddle: 0 };
 
-// How far to turn the board so that `wall` ends up at the bottom.
-const ROTATION = { bottom: 0, left: -Math.PI / 2, top: Math.PI, right: Math.PI / 2 };
+const STEER = {
+  ArrowLeft: LEFT,
+  ArrowRight: RIGHT,
+  ArrowUp: LEFT,
+  ArrowDown: RIGHT,
+  a: LEFT,
+  d: RIGHT,
+};
 
 export function create({ root, me, send }) {
   let latest = null;
+  let sign = 1;
 
-  const stopPainting = canvas(root, (context, side) => {
+  const board = canvas(root, (context, side) => {
     if (latest) paint(context, side, latest, me);
   });
-  const stopListening = keys(STEER, send, STOP);
+
+  // One deduper for every way of steering, so a finger and a key cannot end up
+  // disagreeing about what the server was last told.
+  const intend = onChange(send);
+  const steer = (asked) => intend({ paddle: asked.paddle * sign });
+
+  const stopKeys = keys(STEER, steer, STOP);
+  // Hold a half of the board to move that way; let go to stop. That is one
+  // message on press and one on release -- a phone costs the server no more than
+  // a keyboard. Dragging the paddle to a position would be a message per frame,
+  // and a position is cheatable in a way an intent is not.
+  const stopTouch = halves(board.element, steer, {
+    left: LEFT,
+    right: RIGHT,
+    release: STOP,
+  });
 
   return {
     update(game) {
       latest = game;
+      const mine = game.paddles.find((paddle) => paddle.player === me.sub);
+      sign = mine ? screenSign(mine.wall) : 1;
     },
     destroy() {
-      stopPainting();
-      stopListening();
+      board.destroy();
+      stopKeys();
+      stopTouch();
     },
   };
 }
@@ -104,10 +133,10 @@ export function describe(game, me) {
     .join(" - ");
 
   if (game.over) {
-    if (game.draw) return `${lives}. Draw.`;
+    if (game.draw) return `${lives}. ${t("ui.draw")}`;
     return game.winner === me.sub
-      ? `${lives}. You won!`
-      : `${lives}. ${game.playerNames[game.winner]} won.`;
+      ? `${lives}. ${t("ui.you_won")}`
+      : `${lives}. ${t("ui.they_won", { name: game.playerNames[game.winner] })}`;
   }
 
   const mine = game.paddles.find((paddle) => paddle.player === me.sub);

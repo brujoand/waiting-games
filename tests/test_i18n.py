@@ -105,6 +105,70 @@ def test_norwegian_says_everything_english_does():
     assert not missing, f"no Norwegian string for: {missing}"
 
 
+STATIC = SOURCE / "static"
+
+# A string or template chunk in the frontend. Good enough: this is a small,
+# hand-written codebase with no minifier and no clever quoting.
+LITERAL = re.compile(r'"([^"\\\n]*)"|`([^`\\]*)`', re.DOTALL)
+
+# What a stray English sentence always looks like: a Capitalised word. Every
+# technical string in this frontend is lowercase or kebab-case ("rt-canvas",
+# "pointerdown", "content-type"), and every translation key is a lowercase dotted
+# code -- so a capitalised word is prose that escaped t().
+PROSE = re.compile(r"[A-Z][a-z]{2,}")
+
+
+def without_interpolations(template: str) -> str:
+    """Drop every ${...} from a template, braces balanced.
+
+    What is INSIDE an interpolation is code, and code is allowed capital letters
+    (`game.playerNames`); only the literal text around it is prose.
+    """
+    out = []
+    depth = 0
+    index = 0
+
+    while index < len(template):
+        if depth == 0 and template.startswith("${", index):
+            depth = 1
+            index += 2
+        elif depth:
+            depth += {"{": 1, "}": -1}.get(template[index], 0)
+            index += 1
+        else:
+            out.append(template[index])
+            index += 1
+
+    return "".join(out)
+
+
+def test_no_english_prose_is_hardcoded_in_the_frontend():
+    """i18n.js owns every word. Anything else with a sentence in it is a string
+    the language switch cannot reach.
+
+    This is not hypothetical: the original i18n pass was a mechanical
+    search-and-replace, and it missed two -- Pong's game-over line and Snake's
+    solo one -- because the source did not read quite the way the replacement
+    expected. They looked fine in review, passed every test, and simply stayed
+    English forever for a Norwegian player. Hence a check rather than more care.
+    """
+    offenders = []
+
+    for path in sorted(STATIC.rglob("*.js")):
+        if path.name == "i18n.js":  # the dictionaries, obviously
+            continue
+
+        for line_number, line in enumerate(path.read_text().splitlines(), start=1):
+            code = line.split("//", 1)[0]  # comments may say what they like
+            for quoted, templated in LITERAL.findall(code):
+                text = quoted or without_interpolations(templated)
+                if PROSE.search(text):
+                    where = path.relative_to(STATIC)
+                    offenders.append(f"{where}:{line_number} -- {text.strip()!r}")
+
+    assert not offenders, "prose outside i18n.js:\n" + "\n".join(offenders)
+
+
 @pytest.mark.parametrize("game_class", list(GAMES.values()), ids=list(GAMES))
 def test_no_game_view_collides_with_a_platform_key(game_class):
     """Session.state() merges a game's view OVER the platform's own keys, so a
