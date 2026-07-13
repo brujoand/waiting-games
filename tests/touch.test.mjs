@@ -1,14 +1,15 @@
 // The input layer, driven through a minimal fake DOM.
 //
-// The swipe shipped once and did not work on a real phone -- its logic was fine,
-// so something in the browser ate the gesture. That is exactly the class of thing
-// a unit test cannot see, which is why the on-screen buttons exist and why THEY
-// are tested here: a button that sends on pointerdown has no moving parts to eat.
+// A swipe shipped once and did not work on a phone at all. The logic was fine --
+// these tests passed then too -- and the cause turned out to be setPointerCapture
+// on the canvas swallowing the gesture. Listening for pointermove/pointerup on
+// the WINDOW instead fixed it, which is why the last test here exists: it is the
+// one that would fail if somebody reintroduced element-level capture.
 
 import assert from "node:assert/strict";
 import { beforeEach, test } from "node:test";
 
-import { halves, onChange, pad, swipe } from "../waiting_games/static/games/_canvas.js";
+import { halves, onChange, swipe } from "../waiting_games/static/games/_canvas.js";
 
 // -- the smallest DOM that these helpers actually touch ----------------------
 
@@ -50,75 +51,7 @@ const DIRECTIONS = {
   right: { dir: "right" },
 };
 
-// -- the buttons, which are the ones that must not be able to fail -----------
-
-test("a d-pad button steers on pointerdown, not on click", () => {
-  // A click waits for the release, and a game that waits for your finger to come
-  // up feels broken long before it is.
-  const sent = [];
-  const root = element();
-  pad(root, (i) => sent.push(i), {
-    buttons: [{ label: "^", intent: DIRECTIONS.up, area: "up" }],
-  });
-
-  const [board] = root.children;
-  const [button] = board.children;
-
-  button.fire("pointerdown");
-  assert.deepEqual(sent, [{ dir: "up" }]);
-
-  // ...and no "click" handler exists at all.
-  assert.equal(button.handlers.click, undefined);
-});
-
-test("a held button releases when the finger lifts, or slides off it", () => {
-  const STOP = { paddle: 0 };
-  const sent = [];
-  const root = element();
-  pad(root, (i) => sent.push(i), {
-    hold: STOP,
-    buttons: [{ label: "<", intent: { paddle: -1 }, area: "left" }],
-  });
-
-  const [board] = root.children;
-  const [button] = board.children;
-
-  button.fire("pointerdown");
-  button.fire("pointerup");
-  assert.deepEqual(sent, [{ paddle: -1 }, STOP]);
-
-  // A finger that slides off the button must stop the paddle too, or it runs on
-  // forever into the wall.
-  sent.length = 0;
-  button.fire("pointerdown");
-  button.fire("pointerleave");
-  assert.deepEqual(sent, [{ paddle: -1 }, STOP]);
-});
-
-test("every button a game offers is wired to an intent", () => {
-  const sent = [];
-  const root = element();
-  pad(root, (i) => sent.push(i), {
-    buttons: [
-      { label: "^", intent: DIRECTIONS.up, area: "up" },
-      { label: "<", intent: DIRECTIONS.left, area: "left" },
-      { label: ">", intent: DIRECTIONS.right, area: "right" },
-      { label: "v", intent: DIRECTIONS.down, area: "down" },
-    ],
-  });
-
-  const [board] = root.children;
-  for (const button of board.children) button.fire("pointerdown");
-
-  assert.deepEqual(sent, [
-    { dir: "up" },
-    { dir: "left" },
-    { dir: "right" },
-    { dir: "down" },
-  ]);
-});
-
-// -- the swipe, whose logic was never the problem ----------------------------
+// -- the swipe -------------------------------------------------------------
 
 test("a swipe steers by its dominant axis", () => {
   for (const [dx, dy, expected] of [
@@ -151,9 +84,11 @@ test("a nudge is not a swipe", () => {
 });
 
 test("a finger that strays off the board still steers", () => {
-  // The old version listened for pointermove on the CANVAS and leaned on
-  // setPointerCapture to keep receiving it. move/up now listen on the window, so
-  // there is nothing exotic left in the path to misbehave.
+  // THE regression test. The first version listened for pointermove on the CANVAS
+  // and leaned on setPointerCapture to keep receiving it -- and on a real phone
+  // that combination silently ate every swipe. move/up listen on the window now.
+  // If this test ever fails, somebody has put the capture back and the game is
+  // unplayable on a touchscreen again.
   const sent = [];
   const board = element();
   swipe(board, onChange((i) => sent.push(i.dir)), DIRECTIONS);

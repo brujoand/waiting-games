@@ -5,7 +5,7 @@
 // 60 Hz screen, and what stops the canvas being rebuilt on every push.
 
 import { t } from "../i18n.js";
-import { COLOURS, canvas, keys, onChange, pad, swipe } from "./_canvas.js";
+import { COLOURS, canvas, keys, onChange, swipe } from "./_canvas.js";
 
 // Swipe on a phone; the arrow keys (or WASD) on anything with them.
 const SWIPES = {
@@ -39,15 +39,6 @@ export function create({ root, me, send }) {
   const intend = onChange(send);
   const stopKeys = keys(ARROWS, intend);
   const stopSwipe = swipe(board.element, intend, SWIPES);
-  const stopPad = pad(root, intend, {
-    className: "touchpad-dpad",
-    buttons: [
-      { label: "\u2191", intent: SWIPES.up, area: "up" },
-      { label: "\u2190", intent: SWIPES.left, area: "left" },
-      { label: "\u2192", intent: SWIPES.right, area: "right" },
-      { label: "\u2193", intent: SWIPES.down, area: "down" },
-    ],
-  });
 
   return {
     update(game) {
@@ -57,7 +48,6 @@ export function create({ root, me, send }) {
       board.destroy();
       stopKeys();
       stopSwipe();
-      stopPad();
     },
   };
 }
