@@ -71,14 +71,20 @@ const FANFARE = [
   { from: 1047, at: 0.33, span: 0.42 },
 ];
 
-// Down, and down, and down, and then the long droop. Three descending notes each
-// sagging a little, and a fourth that gives up entirely -- which is the whole
-// character of the thing, and the reason each note is a BEND and not a pitch.
+// Wah, wah, wah, waaaah. Three notes descending, each sagging as it goes, and a
+// fourth that gives up entirely -- which is the whole character of the thing, and
+// the reason every note is a BEND rather than a pitch.
+//
+// Slower than it looks like it should be. The first version ran the four notes in
+// two thirds of a second and read as a buzzer going off; the joke needs the time
+// it takes to be a shrug.
 const TROMBONE = [
-  { from: 233, to: 220, at: 0.0, span: 0.2 },
-  { from: 208, to: 196, at: 0.22, span: 0.2 },
-  { from: 185, to: 175, at: 0.44, span: 0.2 },
-  { from: 175, to: 98, at: 0.66, span: 0.85 },
+  { from: 233, to: 220, at: 0.0, span: 0.34 },
+  { from: 208, to: 196, at: 0.36, span: 0.34 },
+  { from: 185, to: 175, at: 0.72, span: 0.34 },
+  // The one that dies: an octave and a half down, wobbling harder the further it
+  // falls, and taking its time about it.
+  { from: 175, to: 65, at: 1.08, span: 1.3, wobble: 9 },
 ];
 
 // Neither. Two flat notes, going nowhere.
@@ -92,17 +98,76 @@ export function fanfare() {
   for (const shape of FANFARE) note(ctx.destination, shape);
 }
 
+// One brass note.
+//
+// A sawtooth through a fixed lowpass -- what this used to be -- is a muffled
+// buzzer. Three things turn it into a trombone, and all three are per-note:
+//
+//   the filter SWEEPS. A resonant lowpass falling from bright to dark over the
+//   note is the "wah". A static one cannot make that shape, and the shape is
+//   most of what the ear is listening for.
+//
+//   the note is TWO sawtooths, a few cents apart. One alone is thin and synthetic;
+//   the slow beating between two detuned copies is what gives it a body.
+//
+//   the note is HELD, not faded. Brass sits on its volume and then stops. The old
+//   envelope ramped down across the whole span, which is a decaying pluck.
+function brass(destination, { from, to = from, at, span, wobble = 0 }) {
+  const ctx = context;
+  const start = ctx.currentTime + at;
+  const end = start + span;
+
+  const wah = ctx.createBiquadFilter();
+  wah.type = "lowpass";
+  wah.Q.value = 5; // resonant enough that the sweep is heard as a vowel
+  wah.frequency.setValueAtTime(from * 6, start);
+  wah.frequency.exponentialRampToValueAtTime(from * 1.5, end);
+
+  const gain = ctx.createGain();
+  // Half of VOLUME: two oscillators sum into this, and the filter's resonance
+  // adds a little more on top.
+  const level = VOLUME * 0.5;
+  gain.gain.setValueAtTime(0.0001, start);
+  gain.gain.exponentialRampToValueAtTime(level, start + 0.05); // a lipped attack
+  gain.gain.setValueAtTime(level, end - span * 0.3); // ...then held, not fading
+  gain.gain.exponentialRampToValueAtTime(0.0001, end);
+
+  wah.connect(gain).connect(destination);
+
+  // The wobble creeps IN as the note sags -- it is a player running out of breath,
+  // not a vibrato they meant. It rides on top of the pitch bend: an AudioParam
+  // sums whatever is connected to it with its own automation, so the two do not
+  // fight over frequency.
+  let depth = null;
+  if (wobble) {
+    const lfo = ctx.createOscillator();
+    lfo.frequency.value = 5.5;
+
+    depth = ctx.createGain();
+    depth.gain.setValueAtTime(0.0001, start);
+    depth.gain.exponentialRampToValueAtTime(wobble, end);
+
+    lfo.connect(depth);
+    lfo.start(start);
+    lfo.stop(end + 0.05);
+  }
+
+  for (const detune of [-7, 7]) {
+    const osc = ctx.createOscillator();
+    osc.type = "sawtooth";
+    osc.detune.value = detune;
+    osc.frequency.setValueAtTime(from, start);
+    if (to !== from) osc.frequency.exponentialRampToValueAtTime(to, end);
+    if (depth) depth.connect(osc.frequency);
+    osc.connect(wah);
+    osc.start(start);
+    osc.stop(end + 0.05);
+  }
+}
+
 export function trombone() {
   const ctx = audio();
-
-  // A sawtooth is all harmonics and sounds like a buzzer. Rolling the top off it
-  // is what turns it into something brassy enough to be recognisably a trombone.
-  const brass = ctx.createBiquadFilter();
-  brass.type = "lowpass";
-  brass.frequency.value = 900;
-  brass.connect(ctx.destination);
-
-  for (const shape of TROMBONE) note(brass, { ...shape, type: "sawtooth" });
+  for (const shape of TROMBONE) brass(ctx.destination, shape);
 }
 
 export function shrug() {
