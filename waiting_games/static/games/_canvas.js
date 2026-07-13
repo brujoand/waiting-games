@@ -1,9 +1,13 @@
-// Shared plumbing for the real-time games.
+// Shared plumbing for the real-time games: a canvas, and the ways to steer it.
 //
-// The point of both helpers is that a canvas game must NOT redraw from the state
-// push. The server ticks at 8-30 Hz; the browser paints at 60. Painting from a
-// requestAnimationFrame loop that reads the latest frame decouples the two, so a
-// dropped or late frame is a smooth stall rather than a stutter.
+// A canvas game must NOT redraw from the state push. The server ticks at 8-30 Hz;
+// the browser paints at 60. Painting from a requestAnimationFrame loop that reads
+// the latest frame decouples the two, so a dropped or late frame is a smooth
+// stall rather than a stutter.
+//
+// Every input helper here sends INTENT and sends it only when it CHANGES. A phone
+// is the reason that rule matters: a finger held on the screen must be one
+// message, not one per frame.
 
 export function canvas(root, paint) {
   const element = document.createElement("canvas");
@@ -36,33 +40,45 @@ export function canvas(root, paint) {
   }
   frame = requestAnimationFrame(loop);
 
-  // Without this teardown the loop keeps painting into a detached canvas and the
-  // resize listener stacks up on every trip back to the lobby.
-  return () => {
-    cancelAnimationFrame(frame);
-    window.removeEventListener("resize", resize);
+  return {
+    // Touch handlers bind to this, so they can measure the board they are on.
+    element,
+
+    // Without this teardown the loop keeps painting into a detached canvas and
+    // the resize listener stacks up on every trip back to the lobby.
+    destroy() {
+      cancelAnimationFrame(frame);
+      window.removeEventListener("resize", resize);
+    },
   };
 }
 
 // Send an intent only when it CHANGES.
 //
-// keydown autorepeat fires ~30 times a second, so without this guard a held
-// arrow key would be thirty messages a second, per player. This dedupe is the
-// real reason the server's rate limiter never fires for an honest client -- a
-// key held for three seconds is one message, not ninety.
+// keydown autorepeat fires ~30 times a second, and a finger dragged across the
+// screen fires a pointermove per frame. Without a dedupe, either would be tens of
+// messages a second, per player.
+//
+// ONE deduper per game, shared by every input it accepts -- see onChange(). If
+// the keyboard and the touch handler each kept their own idea of the last thing
+// sent, they would disagree the moment a player used both, and the disagreement
+// would show up as a paddle that ignores you.
 //
 // `onRelease` is for a game where letting go MEANS something: Pong's paddle
 // stops. Snake keeps its heading, so it passes nothing.
-export function keys(bindings, send, onRelease = null) {
+export function onChange(send) {
   let last = null;
-  const down = []; // the bound keys currently held, most recent last
 
-  const intend = (intent) => {
+  return (intent) => {
     const encoded = JSON.stringify(intent);
     if (encoded === last) return; // the server already knows
     last = encoded;
     send(intent);
   };
+}
+
+export function keys(bindings, intend, onRelease = null) {
+  const down = []; // the bound keys currently held, most recent last
 
   const press = (event) => {
     const intent = bindings[event.key];
@@ -104,3 +120,110 @@ export const COLOURS = [
   "#8e5bd0",
   "#48b8c4",
 ];
+
+// -- touch ------------------------------------------------------------------
+//
+// Pointer events rather than touch events, so one code path covers a finger, a
+// stylus and a mouse. The canvas sets `touch-action: none` in CSS, which is what
+// stops a swipe scrolling the page out from under the game.
+
+const SWIPE_THRESHOLD = 24; // px before a drag counts as a swipe, not a tap
+
+/**
+ * Swipe to steer, for a game with four directions.
+ *
+ * The origin resets after every swipe, so a long continuous drag round a corner
+ * sends `left` then `up` rather than one direction and a lot of silence.
+ */
+export function swipe(element, intend, directions) {
+  let origin = null;
+
+  const start = (event) => {
+    origin = { x: event.clientX, y: event.clientY };
+    element.setPointerCapture?.(event.pointerId);
+  };
+
+  const move = (event) => {
+    if (!origin) return;
+
+    const dx = event.clientX - origin.x;
+    const dy = event.clientY - origin.y;
+    if (Math.abs(dx) < SWIPE_THRESHOLD && Math.abs(dy) < SWIPE_THRESHOLD) return;
+
+    // The dominant axis wins, so a sloppy diagonal still goes somewhere sensible
+    // rather than nowhere.
+    const intent =
+      Math.abs(dx) > Math.abs(dy)
+        ? directions[dx > 0 ? "right" : "left"]
+        : directions[dy > 0 ? "down" : "up"];
+
+    intend(intent);
+    origin = { x: event.clientX, y: event.clientY }; // ...ready for the next one
+  };
+
+  const end = () => {
+    origin = null;
+  };
+
+  element.addEventListener("pointerdown", start);
+  element.addEventListener("pointermove", move);
+  element.addEventListener("pointerup", end);
+  element.addEventListener("pointercancel", end);
+
+  return () => {
+    element.removeEventListener("pointerdown", start);
+    element.removeEventListener("pointermove", move);
+    element.removeEventListener("pointerup", end);
+    element.removeEventListener("pointercancel", end);
+  };
+}
+
+/**
+ * Hold the left or right half of the board to steer along one axis; let go to
+ * stop.
+ *
+ * This maps exactly onto the intent protocol -- one message when you press, one
+ * when you let go -- so a phone costs the server no more than a keyboard does.
+ * Dragging the paddle to a POSITION would have been the obvious thing and is the
+ * wrong one: it is a message per frame, and a position is trivially cheatable in
+ * a way an intent is not.
+ */
+export function halves(element, intend, { left, right, release }) {
+  const held = new Set();
+
+  const aim = (event) => {
+    const box = element.getBoundingClientRect();
+    return event.clientX < box.left + box.width / 2 ? left : right;
+  };
+
+  const press = (event) => {
+    held.add(event.pointerId);
+    element.setPointerCapture?.(event.pointerId);
+    intend(aim(event));
+  };
+
+  const move = (event) => {
+    // Slide a held finger across the middle and the paddle turns round, without
+    // having to lift it.
+    // Every pointermove calls this; onChange() is what stops that being a
+    // message per frame.
+    if (held.has(event.pointerId)) intend(aim(event));
+  };
+
+  const lift = (event) => {
+    held.delete(event.pointerId);
+    if (held.size === 0) intend(release);
+  };
+
+  element.addEventListener("pointerdown", press);
+  element.addEventListener("pointermove", move);
+  element.addEventListener("pointerup", lift);
+  element.addEventListener("pointercancel", lift);
+
+  return () => {
+    element.removeEventListener("pointerdown", press);
+    element.removeEventListener("pointermove", move);
+    element.removeEventListener("pointerup", lift);
+    element.removeEventListener("pointercancel", lift);
+  };
+}

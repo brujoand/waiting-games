@@ -25,5 +25,11 @@ jobs:
       - name: Run tests
         run: python -m pytest -q
 
+      # Pong's board rotation is pure geometry, and it was silently wrong: two of
+      # the four walls had their steering inverted. Node's own runner needs no
+      # dependencies, and the module under test deliberately touches no DOM.
+      - name: Run the frontend geometry tests
+        run: node --test "tests/*.test.mjs"
+
       - name: Build the image
         run: docker build -t waiting-games:ci .
