@@ -25,7 +25,20 @@ MAX_SESSIONS = 10_000
 
 
 class InvalidName(Exception):
-    """Raised when a display name is unusable. The message is shown to the player."""
+    """Raised when a display name is unusable.
+
+    Like InvalidMove, the message is a stable CODE and never a sentence: the
+    browser owns the prose, because the server does not know what language the
+    player reads. See games/base.py for the rule about params.
+    """
+
+    def __init__(self, code: str, /, **params: object) -> None:
+        super().__init__(code)
+        self.code = code
+        self.params = params
+
+    def as_dict(self) -> dict:
+        return {"code": self.code, "params": self.params}
 
 
 @dataclass
@@ -45,7 +58,7 @@ class Sessions:
         name = clean_name(raw_name)
         self.reap()
         if len(self.players) >= MAX_SESSIONS:
-            raise InvalidName("too many players right now, try again later")
+            raise InvalidName("name.too_many_players")
 
         token = secrets.token_urlsafe(32)
         # The seat id is not the cookie: state() broadcasts it to other players,
@@ -86,13 +99,13 @@ def clean_name(raw: str) -> str:
     and forgotten about.
     """
     if not isinstance(raw, str):
-        raise InvalidName("name must be text")
+        raise InvalidName("name.not_text")
 
     name = " ".join(raw.split())  # collapse runs of whitespace, strip the ends
     if not name:
-        raise InvalidName("name cannot be empty")
+        raise InvalidName("name.empty")
     if len(name) > MAX_NAME_LENGTH:
-        raise InvalidName(f"name cannot be longer than {MAX_NAME_LENGTH} characters")
+        raise InvalidName("name.too_long", max=MAX_NAME_LENGTH)
     if any(not ch.isprintable() for ch in name):
-        raise InvalidName("name contains unprintable characters")
+        raise InvalidName("name.unprintable")
     return name

@@ -7,6 +7,7 @@ never from a request header. See test_a_forged_identity_header_is_ignored.
 from __future__ import annotations
 
 import pytest
+from conftest import rejected
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
@@ -87,7 +88,10 @@ def test_only_two_players_fit_in_a_two_player_game():
     session = board.create("tictactoe", ALICE)
     board.join(session.id, BOB)  # fills up, which auto-starts it
 
-    with pytest.raises(InvalidMove, match="the game is full|already started"):
+    # Exactly which refusal, not either-or: filling up auto-starts the game, so
+    # add_player refuses on `started` before it ever gets to `full`. The old
+    # `match="full|already started"` was hedging because the sentence was fuzzy.
+    with rejected("seat.already_started"):
         board.join(session.id, CAROL)
 
 
@@ -116,7 +120,7 @@ def test_only_the_host_may_start_early():
     session = board.create("snake", ALICE)  # snake seats more than two
     board.join(session.id, BOB)
 
-    with pytest.raises(InvalidMove, match="only the host"):
+    with rejected("lobby.not_host"):
         board.begin(session.id, BOB)
 
     board.begin(session.id, ALICE)
@@ -145,14 +149,14 @@ def test_a_game_in_progress_is_not_abandoned_by_a_new_one():
 def test_an_unknown_game_key_is_rejected():
     board = Lobby()
 
-    with pytest.raises(InvalidMove, match="unknown game"):
+    with rejected("lobby.unknown_game", game="chess"):
         board.create("chess", ALICE)
 
 
 def test_an_unknown_session_is_rejected():
     board = Lobby()
 
-    with pytest.raises(InvalidMove, match="no such game"):
+    with rejected("lobby.no_such_game"):
         board.join("nope", ALICE)
 
 
@@ -395,5 +399,5 @@ def test_a_spectator_cannot_move():
             carol_ws.send_json({"type": "move", "data": {"cell": 0}})
             reply = carol_ws.receive_json()
 
-    assert reply["type"] == "error"
-    assert "not in this game" in reply["data"]["message"]
+    # The frame carries a code, not a sentence: the browser owns the words.
+    assert reply == {"type": "error", "data": {"code": "move.not_seated", "params": {}}}

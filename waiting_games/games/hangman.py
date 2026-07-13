@@ -117,13 +117,13 @@ class Hangman(Game):
     def _set_word(self, move: dict) -> None:
         word = move.get("word")
         if not isinstance(word, str):
-            raise InvalidMove("you must submit a word")
+            raise InvalidMove("hangman.word_required")
 
         word = word.strip().upper()
         if not MIN_LENGTH <= len(word) <= MAX_LENGTH:
-            raise InvalidMove(f"the word must be {MIN_LENGTH}-{MAX_LENGTH} letters")
+            raise InvalidMove("hangman.word_length", min=MIN_LENGTH, max=MAX_LENGTH)
         if any(letter not in ALPHABET for letter in word):
-            raise InvalidMove("the word can only contain letters")
+            raise InvalidMove("hangman.word_letters", alphabet=ALPHABET)
 
         self.word = word
         self.phase = GUESSING
@@ -131,13 +131,13 @@ class Hangman(Game):
     def _guess(self, seat: int, move: dict) -> None:
         letter = move.get("letter")
         if not isinstance(letter, str):
-            raise InvalidMove("you must guess a letter")
+            raise InvalidMove("hangman.letter_required")
 
         letter = letter.strip().upper()
         if len(letter) != 1 or letter not in ALPHABET:
-            raise InvalidMove("that is not a letter")
+            raise InvalidMove("hangman.not_a_letter")
         if letter in self.guessed:
-            raise InvalidMove("that letter has already been tried")
+            raise InvalidMove("hangman.already_tried")
 
         self.guessed.append(letter)
         if letter in self.word:

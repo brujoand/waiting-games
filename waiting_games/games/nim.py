@@ -21,17 +21,22 @@ class Nim(Game):
     def _apply(self, seat: int, move: dict) -> None:
         pile, count = move.get("pile"), move.get("count")
 
-        for value, name in ((pile, "the pile"), (count, "the count")):
-            # bool is a subclass of int, so True would pass an isinstance check.
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise InvalidMove(f"{name} must be a number")
+        # Two codes, not one code with the noun as a param. A param may only be
+        # data that needs no translation -- "the pile" is a word, and a word in a
+        # param is English on the wire wearing a disguise.
+        #
+        # bool is a subclass of int, so True would pass an isinstance check.
+        if isinstance(pile, bool) or not isinstance(pile, int):
+            raise InvalidMove("nim.pile_not_a_number")
+        if isinstance(count, bool) or not isinstance(count, int):
+            raise InvalidMove("nim.count_not_a_number")
 
         if not 0 <= pile < len(self.piles):
-            raise InvalidMove("that pile does not exist")
+            raise InvalidMove("nim.no_such_pile")
         if count < 1:
-            raise InvalidMove("you must take at least one match")
+            raise InvalidMove("nim.take_at_least_one")
         if count > self.piles[pile]:
-            raise InvalidMove("there aren't that many in the pile")
+            raise InvalidMove("nim.not_that_many", left=self.piles[pile])
 
         self.piles[pile] -= count
         self.took = seat

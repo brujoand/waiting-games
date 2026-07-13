@@ -30,7 +30,6 @@ RESERVED_KEYS = frozenset(
     {
         "id",
         "game",
-        "title",
         "status",
         "host",
         "hostSub",
@@ -83,7 +82,9 @@ class Session:
         return {
             "id": self.id,
             "game": self.game_key,
-            "title": self.engine.title,
+            # No `title`. It would be English, and the browser names the game from
+            # `game` (its key) in the player's own language. Shipping a field the
+            # client is forbidden to render is a trap someone eventually springs.
             "status": self.status,
             "host": self.players[self.host].name if self.host in self.players else "?",
             # A display name is not an identity: the client needs the sub to know
@@ -139,12 +140,12 @@ class Lobby:
     def require(self, session_id: str) -> Session:
         session = self.sessions.get(session_id)
         if session is None:
-            raise InvalidMove("no such game")
+            raise InvalidMove("lobby.no_such_game")
         return session
 
     def create(self, game_key: str, player: Player) -> Session:
         if game_key not in GAMES:
-            raise InvalidMove(f"unknown game: {game_key}")
+            raise InvalidMove("lobby.unknown_game", game=game_key)
 
         # One open game per host: starting a new one abandons the old.
         for existing in [s for s in self.sessions.values() if s.host == player.sub]:
@@ -153,7 +154,7 @@ class Lobby:
 
         self.reap()
         if len(self.sessions) >= MAX_SESSIONS:
-            raise InvalidMove("too many games in progress, try again later")
+            raise InvalidMove("lobby.too_many_games")
 
         engine = GAMES[game_key]()
         engine.add_player(player.sub)
@@ -184,7 +185,7 @@ class Lobby:
         """The host starts early, without waiting for the game to fill up."""
         session = self.require(session_id)
         if session.host != player.sub:
-            raise InvalidMove("only the host can start the game")
+            raise InvalidMove("lobby.not_host")
         self._start(session)
         return session
 

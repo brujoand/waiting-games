@@ -83,11 +83,11 @@ class Pong(RealTimeGame):
     def _apply(self, seat: int, move: dict) -> None:
         drift = move.get("paddle")
         if isinstance(drift, bool) or drift not in (-1, 0, 1):
-            raise InvalidMove("invalid input")
+            raise InvalidMove("pong.bad_input")
 
         paddle = self.paddles[seat]
         if paddle.out:
-            raise InvalidMove("you are out of the game")
+            raise InvalidMove("pong.out")
 
         paddle.drift = drift  # tick() is what actually moves it
 

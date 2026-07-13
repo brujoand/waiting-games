@@ -34,11 +34,11 @@ class ConnectFour(Game):
         col = move.get("column")
         # bool is a subclass of int, and board[True] is a legal index.
         if isinstance(col, bool) or not isinstance(col, int) or not 0 <= col < COLS:
-            raise InvalidMove(f"the column must be 0-{COLS - 1}")
+            raise InvalidMove("connectfour.column_range", max=COLS - 1)
 
         row = self._landing_row(col)
         if row is None:
-            raise InvalidMove("the column is full")
+            raise InvalidMove("connectfour.column_full")
 
         self.last = row * COLS + col
         self.board[self.last] = MARKS[seat]

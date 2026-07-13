@@ -29,9 +29,9 @@ class TicTacToe(Game):
         cell = move.get("cell")
         # bool is a subclass of int, and board[True] is a legal index into cell 1.
         if isinstance(cell, bool) or not isinstance(cell, int) or not 0 <= cell <= 8:
-            raise InvalidMove("the cell must be 0-8")
+            raise InvalidMove("tictactoe.cell_range", max=8)
         if self.board[cell] is not None:
-            raise InvalidMove("the cell is occupied")
+            raise InvalidMove("tictactoe.cell_taken")
         self.board[cell] = MARKS[seat]
 
     def _result(self) -> Result | None:

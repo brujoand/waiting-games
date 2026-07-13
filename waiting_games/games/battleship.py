@@ -21,12 +21,17 @@ import random
 from .base import Game, InvalidMove, Result
 
 SIZE = 10
+# Keys, not names. These go on the wire, and a ship called "Carrier" is English
+# prose in game state -- the browser owns every word a player reads, so it names
+# them. Nobody renders these today (the frontend only counts them), which is
+# exactly how an untranslatable string sits unnoticed until someone writes "You
+# sank their Carrier!".
 FLEET = (
-    ("Carrier", 5),
-    ("Battleship", 4),
-    ("Cruiser", 3),
-    ("Submarine", 3),
-    ("Destroyer", 2),
+    ("carrier", 5),
+    ("battleship", 4),
+    ("cruiser", 3),
+    ("submarine", 3),
+    ("destroyer", 2),
 )
 
 PLACING = "placing"
@@ -37,8 +42,8 @@ HIT = "hit"
 
 
 class Ship:
-    def __init__(self, name: str, cells: list[int]) -> None:
-        self.name = name
+    def __init__(self, key: str, cells: list[int]) -> None:
+        self.key = key
         self.cells = cells
         self.hits: set[int] = set()
 
@@ -73,7 +78,7 @@ class Battleship(Game):
         taken: set[int] = set()
         ships: list[Ship] = []
 
-        for name, length in FLEET:
+        for key, length in FLEET:
             while True:
                 horizontal = self.rng.random() < 0.5
                 if horizontal:
@@ -87,7 +92,7 @@ class Battleship(Game):
 
                 if not taken.intersection(cells):
                     taken.update(cells)
-                    ships.append(Ship(name, cells))
+                    ships.append(Ship(key, cells))
                     break
 
         return ships
@@ -131,7 +136,7 @@ class Battleship(Game):
                 self.phase = FIRING  # _next_seat hands the first shot to seat 0
             return
 
-        raise InvalidMove("unknown action")
+        raise InvalidMove("battleship.unknown_action")
 
     def _fire(self, seat: int, move: dict) -> None:
         cell = move.get("cell")
@@ -140,9 +145,9 @@ class Battleship(Game):
             or not isinstance(cell, int)
             or not 0 <= cell < SIZE * SIZE
         ):
-            raise InvalidMove(f"the cell must be 0-{SIZE * SIZE - 1}")
+            raise InvalidMove("battleship.cell_range", max=SIZE * SIZE - 1)
         if cell in self.shots[seat]:
-            raise InvalidMove("you have already fired there")
+            raise InvalidMove("battleship.already_fired")
 
         enemy = self.fleets[1 - seat]
         for ship in enemy:
@@ -167,9 +172,9 @@ class Battleship(Game):
         """What `seat` has learned about the other fleet: only its own shots."""
         return {str(cell): result for cell, result in self.shots[seat].items()}
 
-    def _sunk_names(self, seat: int) -> list[str]:
+    def _sunk_keys(self, seat: int) -> list[str]:
         """Which of the enemy's ships are gone. Derivable from the hits anyway."""
-        return [ship.name for ship in self.fleets[1 - seat] if ship.sunk]
+        return [ship.key for ship in self.fleets[1 - seat] if ship.sunk]
 
     def public_state(self) -> dict:
         """The SPECTATOR view. Neither fleet appears here -- only the shots that
@@ -194,10 +199,10 @@ class Battleship(Game):
                 for seat, player in enumerate(self.players)
             },
             "sunkBy": {
-                player: self._sunk_names(seat)
+                player: self._sunk_keys(seat)
                 for seat, player in enumerate(self.players)
             },
-            "fleet": [name for name, _ in FLEET],
+            "fleet": [key for key, _ in FLEET],
         }
 
     def view(self, seat: int | None) -> dict:
@@ -207,7 +212,7 @@ class Battleship(Game):
 
         # ...and a player sees exactly one fleet: their own.
         state["myFleet"] = [
-            {"name": ship.name, "cells": ship.cells, "hits": sorted(ship.hits)}
+            {"key": ship.key, "cells": ship.cells, "hits": sorted(ship.hits)}
             for ship in self.fleets[seat]
         ]
         return state
