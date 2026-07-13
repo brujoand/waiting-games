@@ -22,7 +22,14 @@ container image.
   proxy leaves alone, and therefore one the client still controls.
 - **Never push to `main`.** Every change lands via a branch and a PR. CI must be
   green before merge.
-- Commits follow Conventional Commits; the type decides the next release.
+- Commits follow Conventional Commits; the type decides the next release, and
+  **a type that releases nothing ships nothing.** `feat` → minor, `fix`/`perf`/
+  `revert` → patch, a `BREAKING CHANGE:` footer → major. Anything else
+  (`chore`, `docs`, `refactor`, `style`, `ci`, `test`) mints **no version**, and
+  with no version there is no image and the change can never reach a cluster that
+  pins one. **The squash title is what semantic-release reads**, so it is the PR
+  title that decides — not the commits inside it. CI fails if a commit touches the
+  app and produces no release, because that used to happen silently.
 
 ## Commands
 

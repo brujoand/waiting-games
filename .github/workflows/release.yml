@@ -58,6 +58,21 @@ jobs:
           else
             echo "released=false" >> "$GITHUB_OUTPUT"
             echo "no release warranted by these commits"
+
+            # ...but if the APP changed and no release came out, that is not a
+            # quiet no-op, it is a silent one. No release means no image, which
+            # means the change can never reach the cluster: the deployment is
+            # pinned to a version, and no new version was ever minted.
+            #
+            # This is not hypothetical. A `revert:` commit was not recognised as
+            # releasable by the angular preset (it detects reverts by a "This
+            # reverts commit <sha>" body, not the type), the workflow went green,
+            # and the change simply never shipped. Fail loudly instead.
+            if git diff --name-only HEAD~1 HEAD \
+                 | grep -qE '^(waiting_games/|Dockerfile|requirements\.txt)'; then
+              echo "::error::This commit changes the app but produced no release, so no image was built and the change can never deploy. Use a commit type semantic-release recognises (feat/fix/perf/revert), or a BREAKING CHANGE footer."
+              exit 1
+            fi
           fi
 
   # No release, no image: every published tag corresponds to a GitHub release.
