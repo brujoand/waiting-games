@@ -13,7 +13,7 @@
 // second table could silently disagree with the first; this cannot.
 
 import { t } from "../i18n.js";
-import { COLOURS, canvas, halves, keys, onChange, pad } from "./_canvas.js";
+import { COLOURS, canvas, halves, keys, onChange } from "./_canvas.js";
 import { ROTATION, screenSign } from "./_geometry.js";
 
 // What the player asked for, on their own screen.
@@ -44,15 +44,6 @@ export function create({ root, me, send }) {
   const steer = (asked) => intend({ paddle: asked.paddle * sign });
 
   const stopKeys = keys(STEER, steer, STOP);
-  // Held, not tapped: the paddle moves while the button is down.
-  const stopPad = pad(root, steer, {
-    className: "touchpad-paddle",
-    hold: STOP,
-    buttons: [
-      { label: "\u25c0", intent: LEFT, area: "left" },
-      { label: "\u25b6", intent: RIGHT, area: "right" },
-    ],
-  });
   // Hold a half of the board to move that way; let go to stop. That is one
   // message on press and one on release -- a phone costs the server no more than
   // a keyboard. Dragging the paddle to a position would be a message per frame,
@@ -73,7 +64,6 @@ export function create({ root, me, send }) {
       board.destroy();
       stopKeys();
       stopTouch();
-      stopPad();
     },
   };
 }
