@@ -9,6 +9,8 @@ silently ruins every game.
 from __future__ import annotations
 
 import json
+import pathlib
+import re
 import unicodedata
 
 import pytest
@@ -156,6 +158,31 @@ def test_a_bogus_word_is_rejected(word):
 
     with pytest.raises(InvalidMove):
         game.apply_move(A, {"word": word})
+
+
+def test_the_gallows_has_a_part_for_every_wrong_guess():
+    """The drawing has to run out at exactly the moment the round does.
+
+    One part short and the fatal guess hangs nobody -- the figure is still
+    missing a leg when the server ends the round. One part long and the last part
+    can never be reached. MAX_WRONG lives in Python and the parts live in
+    JavaScript, so there is no way for the compiler to notice; only this can.
+    """
+    source = (
+        pathlib.Path(__file__).parent.parent
+        / "waiting_games"
+        / "static"
+        / "games"
+        / "hangman.js"
+    ).read_text()
+
+    body = source.split("const PARTS = [", 1)[1].split("\n];", 1)[0]
+    parts = re.findall(r'^\s*\["(?:line|circle)"', body, re.MULTILINE)
+
+    assert len(parts) == MAX_WRONG, (
+        f"the gallows draws {len(parts)} parts but the round ends after "
+        f"{MAX_WRONG} wrong guesses"
+    )
 
 
 def test_the_gallows_completing_scores_for_the_setter():

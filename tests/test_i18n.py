@@ -117,6 +117,13 @@ LITERAL = re.compile(r'"([^"\\\n]*)"|`([^`\\]*)`', re.DOTALL)
 # code -- so a capitalised word is prose that escaped t().
 PROSE = re.compile(r"[A-Z][a-z]{2,}")
 
+# The exception to that rule: SVG attribute names are camelCase by spec, so
+# setAttribute("viewBox", ...) reads to the regex above as a capitalised word.
+# Allowlisted by name rather than by loosening PROSE -- a looser regex would also
+# stop catching a bare "Carrier", which is exactly the kind of noun that has
+# escaped onto the wire here before.
+TECHNICAL = {"viewBox"}
+
 
 def without_interpolations(template: str) -> str:
     """Drop every ${...} from a template, braces balanced.
@@ -162,6 +169,8 @@ def test_no_english_prose_is_hardcoded_in_the_frontend():
             code = line.split("//", 1)[0]  # comments may say what they like
             for quoted, templated in LITERAL.findall(code):
                 text = quoted or without_interpolations(templated)
+                if text in TECHNICAL:
+                    continue
                 if PROSE.search(text):
                     where = path.relative_to(STATIC)
                     offenders.append(f"{where}:{line_number} -- {text.strip()!r}")

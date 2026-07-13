@@ -13,7 +13,7 @@
 // second table could silently disagree with the first; this cannot.
 
 import { t } from "../i18n.js";
-import { COLOURS, canvas, halves, keys, onChange } from "./_canvas.js";
+import { COLOURS, canvas, halves, hint, keys, onChange } from "./_canvas.js";
 import { ROTATION, screenSign } from "./_geometry.js";
 
 // What the player asked for, on their own screen.
@@ -37,6 +37,7 @@ export function create({ root, me, send }) {
   const board = canvas(root, (context, side) => {
     if (latest) paint(context, side, latest, me);
   });
+  hint(root, t("pong.hint"));
 
   // One deduper for every way of steering, so a finger and a key cannot end up
   // disagreeing about what the server was last told.
@@ -139,12 +140,11 @@ export function describe(game, me) {
       : `${lives}. ${t("ui.they_won", { name: game.playerNames[game.winner] })}`;
   }
 
+  // How to steer is mounted once, under the board -- it never changes, and this
+  // line is rewritten thirty times a second. What is left here is only what is
+  // genuinely live: the lives, and whether you are still in it.
   const mine = game.paddles.find((paddle) => paddle.player === me.sub);
-  const hint = mine
-    ? mine.out
-      ? t("pong.you_are_out")
-      : t("pong.hint")
-    : t("pong.watching");
+  if (mine && !mine.out) return lives;
 
-  return `${lives}. ${hint}`;
+  return `${lives}. ${mine ? t("pong.you_are_out") : t("pong.watching")}`;
 }

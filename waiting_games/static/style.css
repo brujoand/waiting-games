@@ -161,6 +161,22 @@ button:disabled {
   font-weight: 600;
 }
 
+/* How to steer. Said once, under the board, and never repainted -- see
+   _canvas.js hint(). It is deliberately quieter than .status: you read it on
+   your first game and never again. */
+.hint {
+  margin: 0.75rem 0 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hm-new {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+}
+
 .grid-3 {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -402,6 +418,46 @@ button:disabled {
 }
 
 .hm-gallows {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+  margin: 0 auto;
+  display: block;
+  overflow: visible;
+}
+
+.hm-frame,
+.hm-part {
+  fill: none;
+  stroke: var(--ink);
+  stroke-width: 4;
+  stroke-linecap: round;
+}
+
+.hm-frame {
+  stroke: var(--muted);
+}
+
+/* The figure turns red once the drawing is complete. */
+.hm-gallows[data-hanged="true"] .hm-part {
+  stroke: #c0524e;
+}
+
+/* Draw the newest part on, rather than blinking it into place. Every shape here
+   is short enough that one dash length covers it. */
+.hm-new {
+  stroke-dasharray: 200;
+  stroke-dashoffset: 200;
+  animation: hm-draw 0.4s ease-out forwards;
+}
+
+@keyframes hm-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.hm-tally {
   margin: 0;
   color: var(--muted);
   font-size: 0.9rem;
