@@ -11,7 +11,6 @@ from __future__ import annotations
 import pytest
 from conftest import rejected
 
-from waiting_games.games import InvalidMove
 from waiting_games.games.connectfour import COLS, ROWS, ConnectFour
 from waiting_games.games.dotsandboxes import BOXES, DOTS, DotsAndBoxes
 from waiting_games.games.nim import Nim

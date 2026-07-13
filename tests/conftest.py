@@ -22,8 +22,6 @@ def rejected(code: str, **params: object):
     with pytest.raises((InvalidMove, InvalidName)) as raised:
         yield
 
-    assert raised.value.code == code, (
-        f"expected {code!r}, got {raised.value.code!r}"
-    )
+    assert raised.value.code == code, f"expected {code!r}, got {raised.value.code!r}"
     if params:
         assert raised.value.params == params

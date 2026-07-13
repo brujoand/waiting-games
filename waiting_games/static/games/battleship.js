@@ -5,6 +5,8 @@
 // browser's payload at all -- there is nothing to hide client-side, and nothing
 // to find in devtools.
 
+import { t } from "../i18n.js";
+
 export function create({ root, me, send }) {
   root.className = "board-bs";
 
@@ -14,8 +16,8 @@ export function create({ root, me, send }) {
         root.replaceChildren(arranging(game, me, send));
       } else {
         root.replaceChildren(
-          grid("The enemy", enemyCells(game, me), (cell) => send({ cell }), canFire(game, me)),
-          grid("Your waters", ownCells(game, me), null, false),
+          grid(t("battleship.the_enemy"), enemyCells(game, me), (cell) => send({ cell }), canFire(game, me)),
+          grid(t("battleship.your_waters"), ownCells(game, me), null, false),
         );
       }
     },
@@ -34,19 +36,19 @@ function arranging(game, me, send) {
   const wrap = document.createElement("div");
   const iAmReady = game.ready[me.sub];
 
-  wrap.append(grid("Your fleet", ownCells(game, me), null, false));
+  wrap.append(grid(t("battleship.your_fleet"), ownCells(game, me), null, false));
 
   const row = document.createElement("div");
   row.className = "row";
 
   const shuffle = document.createElement("button");
-  shuffle.textContent = "Shuffle";
+  shuffle.textContent = t("battleship.shuffle");
   shuffle.disabled = iAmReady;
   shuffle.onclick = () => send({ action: "shuffle" });
 
   const ready = document.createElement("button");
   ready.className = "primary";
-  ready.textContent = iAmReady ? "Ready - waiting..." : "Ready";
+  ready.textContent = iAmReady ? t("battleship.waiting") : t("battleship.ready");
   ready.disabled = iAmReady;
   ready.onclick = () => send({ action: "ready" });
 
@@ -59,7 +61,7 @@ function arranging(game, me, send) {
   if (iAmReady && waiting.length) {
     const note = document.createElement("p");
     note.className = "hm-note";
-    note.textContent = `Waiting for ${waiting.join(", ")}.`;
+    note.textContent = t("battleship.waiting_for", { names: waiting.join(", ") });
     wrap.append(note);
   }
 
@@ -126,22 +128,29 @@ export function describe(game, me) {
 
   if (game.phase === "placing") {
     return game.ready[me.sub]
-      ? "You are ready. Waiting for your opponent..."
-      : "Shuffle until you are happy with your fleet, then hit Ready.";
+      ? t("battleship.you_are_ready")
+      : t("battleship.arrange");
   }
 
   const sunk = game.sunkBy[me.sub] ?? [];
   const lost = Object.entries(game.sunkBy)
     .filter(([sub]) => sub !== me.sub)
     .flatMap(([, names]) => names);
-  const tally = `Sunk ${sunk.length}/${game.fleet.length}, lost ${lost.length}/${game.fleet.length}`;
+  const tally = t("battleship.tally", {
+    sunk: sunk.length,
+    lost: lost.length,
+    fleet: game.fleet.length,
+  });
 
   if (game.over) {
-    const who = game.winner === me.sub ? "You" : game.playerNames[game.winner];
-    return `${tally}. ${who} won.`;
+    return game.winner === me.sub
+      ? `${tally}. ${t("ui.you_won")}`
+      : `${tally}. ${t("ui.they_won", { name: game.playerNames[game.winner] })}`;
   }
 
   const turn =
-    game.turn === me.sub ? "Your turn - fire!" : `${game.playerNames[game.turn]} is taking aim...`;
+    game.turn === me.sub
+      ? t("battleship.fire")
+      : t("battleship.they_aim", { name: game.playerNames[game.turn] });
   return `${tally}. ${turn}`;
 }

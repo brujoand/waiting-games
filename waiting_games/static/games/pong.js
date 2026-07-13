@@ -4,6 +4,7 @@
 // you -- so left/right always means left/right to your hands. The board is
 // rotated to suit you; the physics is not.
 
+import { t } from "../i18n.js";
 import { COLOURS, canvas, keys } from "./_canvas.js";
 
 const STEER = {
@@ -96,8 +97,9 @@ export function describe(game, me) {
 
   const lives = game.paddles
     .map((paddle) => {
-      const who = paddle.player === me.sub ? "You" : game.playerNames[paddle.player];
-      return `${who} ${"*".repeat(paddle.lives) || "out"}`;
+      const name =
+        paddle.player === me.sub ? t("ui.you") : game.playerNames[paddle.player];
+      return `${name} ${"*".repeat(paddle.lives) || t("pong.out_short")}`;
     })
     .join(" - ");
 
@@ -111,9 +113,9 @@ export function describe(game, me) {
   const mine = game.paddles.find((paddle) => paddle.player === me.sub);
   const hint = mine
     ? mine.out
-      ? "You are out."
-      : "The arrow keys steer. Your wall is at the bottom."
-    : "You are watching.";
+      ? t("pong.you_are_out")
+      : t("pong.hint")
+    : t("pong.watching");
 
   return `${lives}. ${hint}`;
 }
