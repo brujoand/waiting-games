@@ -187,6 +187,12 @@ class Snake(RealTimeGame):
             "height": HEIGHT,
             "apples": [list(apple) for apple in self.apples],
             "seconds": round(self.elapsed, 1),
+            # The client slides the snake between cells rather than teleporting it,
+            # and this is how long it has to do the sliding in. Sent rather than
+            # hardcoded over there: the tick rate IS the snake's speed, so a magic
+            # 125 in the renderer would be a second copy of the game's difficulty,
+            # silently wrong the day anyone tunes it.
+            "tickHz": self.tick_hz,
             "snakes": [
                 {
                     "player": self.players[seat],
