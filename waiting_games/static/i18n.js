@@ -49,6 +49,10 @@ const en = {
   // -- errors the server can send
   "error.request_failed": "Request failed ({status}).",
   "auth.not_signed_in": "You are not signed in.",
+  "auth.login_disabled": "This server does not have a sign-in form.",
+  "auth.proxy_missing":
+    "The proxy in front of this server did not say who you are. That is a " +
+    "misconfiguration, not something you can fix from here.",
 
   "move.game_over": "The game is over.",
   "move.not_started": "The game has not started.",
@@ -216,6 +220,10 @@ const nb = {
   // -- errors the server can send
   "error.request_failed": "Forespørselen feilet ({status}).",
   "auth.not_signed_in": "Du er ikke logget inn.",
+  "auth.login_disabled": "Denne tjeneren har ikke innloggingsskjema.",
+  "auth.proxy_missing":
+    "Proxyen foran denne tjeneren sa ikke hvem du er. Det er en feil i " +
+    "oppsettet, ikke noe du kan rette herfra.",
 
   "move.game_over": "Spillet er over.",
   "move.not_started": "Spillet har ikke startet.",

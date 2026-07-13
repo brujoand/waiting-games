@@ -11,7 +11,16 @@ from conftest import rejected
 from fastapi.testclient import TestClient
 from starlette.websockets import WebSocketDisconnect
 
-from waiting_games.auth import InvalidName, Player, Sessions, clean_name
+from waiting_games.auth import (
+    COOKIE_NAME,
+    MAX_NAME_LENGTH,
+    InvalidName,
+    Player,
+    ProxyIdentity,
+    Sessions,
+    clean_name,
+    display_name,
+)
 from waiting_games.lobby import Lobby
 from waiting_games.main import app, lobby, sessions
 
@@ -203,9 +212,14 @@ def test_a_request_without_a_session_is_rejected():
 
 
 def test_a_forged_identity_header_is_ignored():
-    # An earlier version of this server took its identity from X-Auth-* headers
-    # set by a proxy in front of it. Nothing may authenticate on a client-supplied
-    # header again: whoever is talking to us can set any header they like.
+    """In the DEFAULT mode, a header is worth nothing.
+
+    Whoever is talking to us can set any header they like, so trusting one would
+    let anybody be anybody. TRUSTED_PROXY_AUTH is the one sanctioned exception,
+    and it is safe only where the deployment guarantees the proxy is the sole
+    client -- see the proxy-mode tests below, and CLAUDE.md. This test is what
+    stops the exception quietly becoming the rule.
+    """
     with TestClient(app) as client:
         response = client.get(
             "/api/me",
@@ -400,3 +414,108 @@ def test_a_spectator_cannot_move():
 
     # The frame carries a code, not a sentence: the browser owns the words.
     assert reply == {"type": "error", "data": {"code": "move.not_seated", "params": {}}}
+
+
+# -- the trusted-proxy mode ---------------------------------------------------
+#
+# The opposite deployment: this process is unreachable except through a proxy
+# that authenticates, so its headers are worth exactly as much as that proxy's
+# own authentication. Everything above still holds by default; none of it is
+# relaxed, and the forged-header test above is what keeps that true.
+
+PROXY = {"X-Auth-Sub": "b1946ac9", "X-Auth-Email": "anders@brujordet.no"}
+
+
+@pytest.fixture
+def proxy_mode(monkeypatch):
+    from waiting_games import main
+
+    monkeypatch.setattr(main, "IDENTITY", ProxyIdentity())
+
+
+def test_the_proxy_says_who_you_are(proxy_mode):
+    with TestClient(app) as client:
+        me = client.get("/api/me", headers=PROXY).json()
+
+    assert me["name"] == "anders"  # the local part, not the whole address
+    assert me["sub"] == "oidc:b1946ac9"
+    assert "brujordet.no" not in me["sub"]  # the email is NEVER the seat id
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"X-Auth-Sub": "b1946ac9"},  # the email claim was missing
+        {"X-Auth-Email": "anders@brujordet.no"},  # the sub claim was missing
+        {"X-Auth-Sub": "", "X-Auth-Email": "a@b.c"},  # present, but empty
+        {"X-Auth-Sub": "a,b", "X-Auth-Email": "a@b.c"},  # two headers folded into one
+    ],
+)
+def test_half_an_identity_is_no_identity(proxy_mode, headers):
+    """Envoy overwrites a claimToHeaders header when the claim IS in the token and
+    leaves it alone when it is not. So a request carrying only one of the two
+    claims we actually guarantee is a broken request, not a guest -- and there is
+    deliberately nothing for it to fall back to, because a fallback is a downgrade
+    and the downgrade is the attack.
+    """
+    with TestClient(app) as client:
+        assert client.get("/api/me", headers=headers).status_code == 401
+
+
+def test_a_cookie_is_worth_nothing_in_proxy_mode(proxy_mode):
+    with TestClient(app) as client:
+        client.cookies.set(COOKIE_NAME, "a token from before the flag was flipped")
+        assert client.get("/api/me").status_code == 401
+
+
+def test_there_is_no_sign_in_form_in_proxy_mode(proxy_mode):
+    with TestClient(app) as client:
+        assert client.post("/api/login", json={"name": "x"}).status_code == 404
+        assert client.post("/api/logout").status_code == 404
+
+
+def test_the_websocket_takes_the_proxy_identity_too(proxy_mode):
+    # The seam is one function precisely so this cannot be forgotten.
+    with (
+        TestClient(app) as client,
+        client.websocket_connect("/ws/lobby", headers=PROXY) as ws,
+    ):
+        assert ws.receive_json()["type"] == "sessions"
+
+
+def test_the_websocket_refuses_an_unidentified_connection(proxy_mode):
+    with (
+        TestClient(app) as client,
+        pytest.raises(WebSocketDisconnect),
+        client.websocket_connect("/ws/lobby") as ws,
+    ):
+        ws.receive_json()
+
+
+def test_the_browser_is_told_which_mode_it_is_in(proxy_mode):
+    with TestClient(app) as client:
+        assert client.get("/api/config").json() == {"authMode": "proxy"}
+
+
+def test_the_browser_is_told_about_cookie_mode_too():
+    with TestClient(app) as client:
+        assert client.get("/api/config").json() == {"authMode": "cookie"}
+
+
+@pytest.mark.parametrize(
+    ("email", "expected"),
+    [
+        ("anders@brujordet.no", "anders"),
+        ("x" * 100 + "@e.com", "x" * MAX_NAME_LENGTH),  # clamped, never unbounded
+        ("@e.com", "player"),  # never empty
+        ("a\x00b@e.com", "ab"),  # never unprintable
+        ("  spaced  out  @e.com", "spaced out"),
+    ],
+)
+def test_a_display_name_from_a_hostile_address_degrades(email, expected):
+    """display_name is the only place a header's CONTENT reaches the DOM, so it
+    must be total. Unlike clean_name it never raises: there is no login form to
+    bounce anyone back to, so a strange address must degrade into something
+    printable rather than 401 a player out of the building."""
+    assert display_name(email) == expected
