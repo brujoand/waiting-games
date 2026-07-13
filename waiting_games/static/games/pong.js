@@ -123,7 +123,11 @@ function paint(context, side, game, me) {
 }
 
 export function describe(game, me) {
-  if (game.status !== "active") return null;
+  // Not before the board is dealt. This is deliberately NOT `!== "active"`:
+  // a finished session's status is "finished", so that test quietly swallowed
+  // every game-over line below it and left the platform's generic one to speak
+  // for a game it does not understand.
+  if (game.status === "waiting") return null;
 
   const lives = game.paddles
     .map((paddle) => {
