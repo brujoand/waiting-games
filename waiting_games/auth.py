@@ -1,27 +1,50 @@
-"""Identity: a display name, exchanged for an opaque session cookie.
+"""Who the player is. Two ways, and the deployment picks.
 
-There is no password and no account. You claim a name, the server hands back a
-random token, and that token is who you are until it expires. This is the right
-amount of security for a game of tic tac toe and no more: it stops a player
-impersonating another *player*, and protects nothing else.
+**CookieIdentity is the default.** You claim a display name, the server hands back
+an opaque token, and that token is who you are until it expires. No password, no
+account: the right amount of security for a game of tic tac toe and no more. It
+stops a player impersonating another *player*, and protects nothing else. The
+cookie is the only credential, so it is unguessable, HttpOnly so page scripts
+cannot read it, and SameSite=Lax so another origin cannot ride along on it.
 
-The cookie value is the only credential, so it is unguessable (secrets.token_*),
-HttpOnly so page scripts cannot read it, and SameSite=Lax so another origin
-cannot ride along on it. Identity is never taken from a request header -- a
-header is trivially forged by whoever is talking to us, and treating one as
-proof of identity would let anyone be anyone.
+In this mode a request header is worth NOTHING. Whoever is talking to us can set
+any header they like, so treating one as proof of identity would let anybody be
+anybody. There is a test that fails if that is reintroduced.
+
+**ProxyIdentity is opt-in, and trusts exactly two headers.** It exists for a
+deployment where the process is unreachable except through an authenticating
+proxy -- ours sits behind Envoy, which terminates an OIDC flow, with a network
+policy that makes Envoy the only client that can open a socket to us. There, and
+only there, the header is not client-supplied and is worth exactly as much as the
+proxy's own authentication.
+
+The code cannot check that precondition. The flag is an operator's assertion, and
+if it is wrong the server is handed to anyone who can send a header.
 """
 
 from __future__ import annotations
 
 import secrets
 import time
+import unicodedata
 from dataclasses import dataclass, field
+from typing import Protocol
+
+from starlette.requests import HTTPConnection
 
 COOKIE_NAME = "wg_session"
 SESSION_TTL = 12 * 60 * 60
 MAX_NAME_LENGTH = 24
 MAX_SESSIONS = 10_000
+
+# Only claims that are in EVERY token may be listed here.
+#
+# Envoy's claimToHeaders OVERWRITES one of these headers when the claim is in the
+# token -- and LEAVES IT ALONE when the claim is missing. So a header backing an
+# OPTIONAL claim is a header the client still controls. `sub` and `email` are
+# guaranteed by the OIDC flow; `name` is not, and must never be trusted.
+SUB_HEADER = "x-auth-sub"
+EMAIL_HEADER = "x-auth-email"
 
 
 class InvalidName(Exception):
@@ -109,3 +132,65 @@ def clean_name(raw: str) -> str:
     if any(not ch.isprintable() for ch in name):
         raise InvalidName("name.unprintable")
     return name
+
+
+def display_name(email: str) -> str:
+    """A usable name from a verified address: its local part, made safe to render.
+
+    Unlike clean_name this NEVER raises. There is no login form to bounce a player
+    back to -- the proxy has already said who they are -- so a strange address must
+    degrade into something we can print, not 401 someone out of the building.
+    """
+    local = unicodedata.normalize("NFC", email).partition("@")[0]
+    name = " ".join(local.split())
+    name = "".join(ch for ch in name if ch.isprintable())
+    return name[:MAX_NAME_LENGTH] or "player"
+
+
+class Identity(Protocol):
+    """How this deployment answers "who is this?"."""
+
+    mode: str  # "cookie" | "proxy" -- the frontend asks, so it knows what to render
+    login_enabled: bool
+
+    def identify(self, conn: HTTPConnection) -> Player | None: ...
+
+
+class CookieIdentity:
+    """The default. A self-declared name, exchanged for an opaque cookie."""
+
+    mode = "cookie"
+    login_enabled = True
+
+    def __init__(self, sessions: Sessions) -> None:
+        self.sessions = sessions
+
+    def identify(self, conn: HTTPConnection) -> Player | None:
+        return self.sessions.resolve(conn.cookies.get(COOKIE_NAME))
+
+
+class ProxyIdentity:
+    """Identity from headers that only a trusted proxy can set.
+
+    Safe if and only if the deployment guarantees the proxy is the ONLY thing that
+    can reach this process. Read the module docstring before turning this on.
+    """
+
+    mode = "proxy"
+    login_enabled = False
+
+    def identify(self, conn: HTTPConnection) -> Player | None:
+        sub = conn.headers.get(SUB_HEADER, "").strip()
+        email = conn.headers.get(EMAIL_HEADER, "").strip()
+
+        # Both, or nobody. No falling back to a cookie and no falling back to a
+        # third header: a fallback is a downgrade, and the downgrade is the
+        # attack. A comma means two headers were folded into one, which is not a
+        # request we are willing to guess about either.
+        if not sub or not email or "," in sub or "," in email:
+            return None
+
+        # Namespaced, because the seat id is broadcast to every other player, and
+        # the two identity spaces must never be confusable. And never, ever use
+        # the email as the sub.
+        return Player(sub=f"oidc:{sub}", name=display_name(email))

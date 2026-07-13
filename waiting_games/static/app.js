@@ -15,6 +15,7 @@ const toastEl = document.getElementById("toast");
 
 const state = {
   me: null,
+  authMode: "cookie", // "cookie" | "proxy" -- from /api/config, before anything renders
   games: [],
   sessions: [],
   game: null, // the current game's state, when we are in one
@@ -215,6 +216,13 @@ function renderLogin() {
 }
 
 function renderWhoami() {
+  // No sign-out in proxy mode: signing out means signing out of the identity
+  // provider, and the proxy owns that session, not us.
+  if (state.authMode === "proxy") {
+    whoamiEl.replaceChildren(el("span", { textContent: state.me.name }));
+    return;
+  }
+
   const signOut = el("button", { className: "link", textContent: t("ui.sign_out") });
   signOut.onclick = async () => {
     stopHeartbeat();
@@ -475,10 +483,20 @@ async function main() {
     unmountGame();
   });
 
-  // A live cookie from an earlier visit skips the name prompt.
+  // Which identity model this deployment uses, before anything is rendered. In
+  // proxy mode a 401 means the proxy did not inject its headers -- a name form
+  // there would be a lie, and would 404 on submit.
+  state.authMode = (await api("/api/config")).authMode;
+
   try {
-    state.me = await api("/api/me");
+    state.me = await api("/api/me"); // a live cookie, or the proxy's headers
   } catch {
+    if (state.authMode === "proxy") {
+      appEl.replaceChildren(
+        el("p", { className: "empty", textContent: t("auth.proxy_missing") }),
+      );
+      return;
+    }
     renderLogin();
     return;
   }
