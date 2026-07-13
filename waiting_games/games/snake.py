@@ -75,11 +75,19 @@ class Snake(RealTimeGame):
         return taken
 
     def _grow_an_apple(self) -> None:
+        # _occupied() is built ONCE. It used to be called from inside the filter,
+        # which rebuilt the whole occupied set for every one of the board's 576
+        # cells -- and the set is every cell of every snake, so the cost climbed
+        # with the snake: 0.3ms when it was three cells long, 4ms at eighty.
+        #
+        # That lands on the tick that eats the apple, inside the tick loop, and it
+        # pushed that one tick ~12ms late. The browser slides the snake between
+        # ticks and measures how long it has to slide for, so a late tick made it
+        # stall and then jump -- once every few seconds, which is how often you eat.
+        # Smooth animation is a bargain the server has to keep too.
+        taken = self._occupied()
         free = [
-            (x, y)
-            for x in range(WIDTH)
-            for y in range(HEIGHT)
-            if (x, y) not in self._occupied()
+            (x, y) for x in range(WIDTH) for y in range(HEIGHT) if (x, y) not in taken
         ]
         if free:
             self.apples.append(self.rng.choice(free))

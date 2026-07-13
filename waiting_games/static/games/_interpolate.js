@@ -6,14 +6,38 @@
 // shape of code: a small piece of arithmetic that is either right or subtly,
 // invisibly wrong.
 
-// A tick that claims to have taken less than this is a burst, and one that claims
-// more is a stall. Sliding literally over either would look worse than not
-// sliding at all.
-export const MIN_SPAN_MS = 50;
+// A backgrounded tab hands back a gap of many seconds. Sliding one cell over
+// eight of them is not smoothness, it is paralysis: past this, snap.
 export const MAX_SPAN_MS = 500;
 
-export function clamp(value, low, high) {
-  return Math.min(Math.max(value, low), high);
+// Only used when the server has not said how fast it ticks.
+export const ASSUMED_TICK_MS = 125;
+
+// How long to slide for.
+//
+// NOT the measured gap, which is what this used to be. The gap between two
+// arrivals carries every hiccup between the server's tick loop and this line --
+// scheduler jitter, a busy socket, wifi, a slow tick -- and a span even 10ms too
+// long is a slide that has only gone 92% of the way to the next cell by the time
+// the next state lands on time. The snake then JUMPS the last 8%. Measuring the
+// span is therefore self-defeating: it turns a late tick into a stall AND a jump,
+// and the jump is the exact thing the sliding exists to remove.
+//
+// The tick rate is known -- the server sends it -- so the honest span is a WHOLE
+// NUMBER of ticks. Round the measurement to one. That keeps the property the
+// measurement was there for (a state that never arrived means two ticks of
+// travel, and the snake glides two cells rather than snapping them) and throws
+// away the jitter that came with it. Being exactly right is also what makes the
+// slide position-continuous: alpha reaches 1 precisely as the next state lands,
+// so consecutive slides join up instead of stepping.
+//
+// There is deliberately no lower clamp. One tick IS the floor, and a fixed 50ms
+// floor -- which is what used to be here -- would silently stretch every slide in
+// any game ticking faster than 20 Hz. Pong ticks at 30.
+export function spanFor(measured, tickHz) {
+  const tick = tickHz ? 1000 / tickHz : ASSUMED_TICK_MS;
+  const ticks = Math.max(1, Math.round(measured / tick));
+  return Math.min(ticks * tick, MAX_SPAN_MS);
 }
 
 // Where segment `index` should be drawn, part-way between the last two states.
