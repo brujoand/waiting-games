@@ -53,6 +53,23 @@ export function canvas(root, paint) {
   };
 }
 
+// How to steer. Mounted ONCE, under the board, and never touched again.
+//
+// This used to be tacked onto the end of the status line, which a real-time game
+// rewrites 8-30 times a second. A sentence that never changes, reprinted next to
+// numbers that do, is what made those screens feel noisy: the eye keeps being
+// pulled back to re-read something it already knows. Say it once, and leave the
+// live line to carry only what is actually live.
+//
+// Call it AFTER canvas(), which replaces the root's children.
+export function hint(root, text) {
+  const note = document.createElement("p");
+  note.className = "hint";
+  note.textContent = text;
+  root.append(note);
+  return note;
+}
+
 // Send an intent only when it CHANGES.
 //
 // keydown autorepeat fires ~30 times a second, and a finger dragged across the

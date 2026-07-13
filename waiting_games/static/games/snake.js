@@ -5,7 +5,7 @@
 // 60 Hz screen, and what stops the canvas being rebuilt on every push.
 
 import { t } from "../i18n.js";
-import { COLOURS, canvas, keys, onChange, swipe } from "./_canvas.js";
+import { COLOURS, canvas, hint, keys, onChange, swipe } from "./_canvas.js";
 
 // Swipe on a phone; the arrow keys (or WASD) on anything with them.
 const SWIPES = {
@@ -32,6 +32,7 @@ export function create({ root, me, send }) {
   const board = canvas(root, (context, side) => {
     if (latest) paint(context, side, latest, me);
   });
+  hint(root, t("snake.hint"));
 
   // One deduper for every way of steering. A swipe, a key and a button are all
   // the same intent, and if each kept its own idea of what the server was last
@@ -98,8 +99,13 @@ export function describe(game, me) {
   const solo = game.snakes.length === 1;
 
   if (game.over) {
+    // A spectator has no snake of their own, so nothing on this path may reach
+    // through `mine` without checking. Watching somebody else's solo run used to
+    // throw here and blank the whole status line.
     if (solo) {
-      return t("snake.solo_over", { seconds: game.seconds, length: mine.length });
+      return mine
+        ? t("snake.solo_over", { seconds: game.seconds, length: mine.length })
+        : t("snake.solo_over_watched", { seconds: game.seconds });
     }
     if (game.draw) return t("snake.all_crashed");
     return game.winner === me.sub
@@ -107,14 +113,18 @@ export function describe(game, me) {
       : t("ui.they_won", { name: game.playerNames[game.winner] });
   }
 
-  const alive = game.snakes.filter((snake) => snake.alive).length;
+  // No clock on this line. The server streams `seconds` to one decimal place,
+  // eight times a second, and a status line that rewrites itself at 8 Hz is one
+  // nobody can actually read -- the digits just flicker. The elapsed time IS the
+  // score in solo, so it is reported once, when the run ends.
   const you = mine
     ? mine.alive
       ? t("snake.length", { length: mine.length })
       : t("snake.you_crashed")
     : t("snake.watching");
 
-  return solo
-    ? t("snake.solo_status", { you, seconds: game.seconds })
-    : t("snake.status", { you, alive });
+  if (solo) return you;
+
+  const alive = game.snakes.filter((snake) => snake.alive).length;
+  return t("snake.status", { you, alive });
 }
