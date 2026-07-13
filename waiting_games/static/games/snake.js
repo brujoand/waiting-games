@@ -92,6 +92,18 @@ function paint(context, side, game, me) {
   });
 }
 
+export function outcome(game, me) {
+  // Solo has no winner to be. The run ends when you crash, and the engine reports
+  // that as a DRAW -- Result.draw() -- because there was nobody to beat. Which is
+  // correct on the wire and would be absurd in the room: the platform's rule
+  // would play a neutral, that-was-close chime at somebody who just died.
+  //
+  // You crashed. It is a loss. Have the trombone.
+  if (game.snakes.length !== 1) return null; // a race: the platform is right
+
+  return game.snakes[0].player === me.sub ? "lose" : "none";
+}
+
 export function describe(game, me) {
   if (game.status !== "active") return null;
 
