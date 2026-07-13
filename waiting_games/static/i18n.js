@@ -18,6 +18,8 @@ const en = {
   "ui.sound_on": "Sound on",
   "ui.sound_off": "Sound off",
   "ui.new_game": "New game",
+  "ui.together": "With others",
+  "ui.alone": "On your own",
   "ui.start_game": "Start game",
   "ui.start_now": "Start now",
   "ui.join_a_game": "Join a game",
@@ -27,6 +29,7 @@ const en = {
   "ui.close_game": "Close game",
   "ui.confirm_close": "Close this game? Anyone playing it goes back to the lobby.",
   "ui.nothing_waiting": "No games waiting. Start one.",
+  "ui.players_one": "1 player",
   "ui.players_exact": "{max} players",
   "ui.players_range": "{min}-{max} players",
   "ui.game_with_players": "{game} ({players})",
@@ -90,6 +93,7 @@ const en = {
   "game.battleship.title": "Battleship",
   "game.snake.title": "Snake",
   "game.pong.title": "Pong",
+  "game.twentyfortyeight.title": "2048",
 
   "tictactoe.cell_range": "The cell must be 0-{max}.",
   "tictactoe.cell_taken": "That cell is taken.",
@@ -175,6 +179,14 @@ const en = {
   "pong.hint": "Hold a side of the board, or use the arrow keys. Your wall is at the bottom.",
   "pong.you_are_out": "You are out.",
   "pong.watching": "You are watching.",
+
+  "twentyfortyeight.unknown_direction": "Unknown direction.",
+  "twentyfortyeight.hint": "Swipe, or use the arrow keys.",
+  "twentyfortyeight.score": "Score {score}",
+  "twentyfortyeight.watching": "You are watching. Score {score}.",
+  "twentyfortyeight.you_made_it": "You made {target}! Final score {score}.",
+  "twentyfortyeight.stuck": "No moves left. Final score {score}.",
+  "twentyfortyeight.run_over_watched": "The run ended on {score}.",
 };
 
 const nb = {
@@ -187,6 +199,8 @@ const nb = {
   "ui.sound_on": "Lyd på",
   "ui.sound_off": "Lyd av",
   "ui.new_game": "Nytt spill",
+  "ui.together": "Med andre",
+  "ui.alone": "Alene",
   "ui.start_game": "Start spill",
   "ui.start_now": "Start nå",
   "ui.join_a_game": "Bli med i et spill",
@@ -196,6 +210,7 @@ const nb = {
   "ui.close_game": "Avslutt spillet",
   "ui.confirm_close": "Avslutte spillet? Alle som spiller det sendes til lobbyen.",
   "ui.nothing_waiting": "Ingen spill venter. Start et selv.",
+  "ui.players_one": "1 spiller",
   "ui.players_exact": "{max} spillere",
   "ui.players_range": "{min}-{max} spillere",
   "ui.game_with_players": "{game} ({players})",
@@ -259,6 +274,7 @@ const nb = {
   "game.battleship.title": "Senke slagskip",
   "game.snake.title": "Slange",
   "game.pong.title": "Pong",
+  "game.twentyfortyeight.title": "2048",
 
   "tictactoe.cell_range": "Ruten må være 0-{max}.",
   "tictactoe.cell_taken": "Ruten er opptatt.",
@@ -344,6 +360,14 @@ const nb = {
   "pong.hint": "Hold på en side av brettet, eller bruk piltastene. Veggen din er nederst.",
   "pong.you_are_out": "Du er ute.",
   "pong.watching": "Du ser på.",
+
+  "twentyfortyeight.unknown_direction": "Ukjent retning.",
+  "twentyfortyeight.hint": "Sveip, eller bruk piltastene.",
+  "twentyfortyeight.score": "Poeng {score}",
+  "twentyfortyeight.watching": "Du ser på. Poeng {score}.",
+  "twentyfortyeight.you_made_it": "Du klarte {target}! Sluttpoeng {score}.",
+  "twentyfortyeight.stuck": "Ingen trekk igjen. Sluttpoeng {score}.",
+  "twentyfortyeight.run_over_watched": "Forsøket endte på {score}.",
 };
 
 const DICTS = { en, nb };

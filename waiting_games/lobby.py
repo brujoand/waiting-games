@@ -179,6 +179,12 @@ class Lobby:
             players={player.sub: player},
         )
         self.sessions[session.id] = session
+
+        # A one-seat game is full the moment it exists, and nobody is coming. The
+        # rule is join()'s -- a full game starts -- and applying it here is what
+        # spares a solo player a Start button for a game they cannot fill.
+        if engine.is_full:
+            self._start(session)
         return session
 
     def join(self, session_id: str, player: Player) -> Session:

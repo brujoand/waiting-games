@@ -146,6 +146,39 @@ button:disabled {
   cursor: default;
 }
 
+/* Solo, or with other people. A segmented pair above the picker: the choice that
+   decides what the picker is even offering, so it reads before it, not beside it. */
+.modes {
+  display: flex;
+  gap: 0;
+  margin-bottom: 0.75rem;
+  width: fit-content;
+}
+
+.mode {
+  border-radius: 0;
+  color: var(--muted);
+  font-size: 0.9rem;
+  padding: 0.35rem 0.9rem;
+}
+
+.mode:first-child {
+  border-radius: 7px 0 0 7px;
+}
+
+.mode:last-child {
+  border-radius: 0 7px 7px 0;
+  border-left: 0;
+}
+
+.mode[data-on="true"] {
+  background: var(--panel);
+  border-color: var(--accent);
+  color: var(--ink);
+  box-shadow: inset 0 -2px 0 var(--accent);
+  font-weight: 600;
+}
+
 .sessions {
   list-style: none;
   margin: 0;
@@ -628,6 +661,124 @@ button:disabled {
   aspect-ratio: 1;
   border-radius: 50%;
   background: var(--muted);
+}
+
+/* -- 2048 ----------------------------------------------------------------- */
+
+/* The one board that keeps its own colours in both themes. The tile ramp IS the
+   game -- you read the board by its colours long before you read the numbers --
+   and a palette that dims itself at night would take that away. */
+.board-2048 {
+  margin-bottom: 1rem;
+}
+
+.t48-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--size), 1fr);
+  gap: 2.5%;
+  padding: 2.5%;
+  aspect-ratio: 1;
+  width: 100%;
+  max-width: 24rem;
+  background: #bbada0;
+  border-radius: 8px;
+
+  /* The tiles size their numbers off the BOARD's width (cqw), so a 4x4 grid on a
+     phone and on a desktop are the same picture at two scales. */
+  container-type: inline-size;
+
+  /* Steering is a swipe, so the board must not scroll the page out from under it,
+     nor let a fast double-tap select the numbers. */
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.t48-tile {
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  background: rgba(238, 228, 218, 0.35);
+  color: #776e65;
+  font-weight: 700;
+  font-size: clamp(1rem, 6.5cqw, 2rem);
+}
+
+.t48-tile[data-value] {
+  background: #eee4da;
+}
+
+.t48-tile[data-value="4"] {
+  background: #ede0c8;
+}
+
+.t48-tile[data-value="8"] {
+  background: #f2b179;
+  color: #f9f6f2;
+}
+
+.t48-tile[data-value="16"] {
+  background: #f59563;
+  color: #f9f6f2;
+}
+
+.t48-tile[data-value="32"] {
+  background: #f67c5f;
+  color: #f9f6f2;
+}
+
+.t48-tile[data-value="64"] {
+  background: #f65e3b;
+  color: #f9f6f2;
+}
+
+.t48-tile[data-value="128"] {
+  background: #edcf72;
+  color: #f9f6f2;
+}
+
+.t48-tile[data-value="256"] {
+  background: #edcc61;
+  color: #f9f6f2;
+}
+
+.t48-tile[data-value="512"] {
+  background: #edc850;
+  color: #f9f6f2;
+}
+
+.t48-tile[data-value="1024"] {
+  background: #edc53f;
+  color: #f9f6f2;
+  font-size: clamp(0.8rem, 5cqw, 1.5rem); /* four digits, same tile */
+}
+
+.t48-tile[data-value="2048"] {
+  background: #edc22e;
+  color: #f9f6f2;
+  font-size: clamp(0.8rem, 5cqw, 1.5rem);
+  box-shadow: 0 0 12px rgba(237, 194, 46, 0.8);
+}
+
+/* A tile that changed lands, rather than blinking into place. */
+.t48-pop {
+  animation: t48-pop 0.14s ease-out;
+}
+
+@keyframes t48-pop {
+  from {
+    transform: scale(0.82);
+  }
+  to {
+    transform: scale(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .t48-pop {
+    animation: none;
+  }
 }
 
 /* -- Snake and Pong (canvas) ---------------------------------------------- */

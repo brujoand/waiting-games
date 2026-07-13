@@ -21,6 +21,13 @@ const state = {
   games: [],
   sessions: [],
   game: null, // the current game's state, when we are in one
+
+  // The lobby's two filters. Both live here rather than in the dom, because the
+  // lobby list repaints on every session anybody anywhere starts -- and a picker
+  // that forgot what you had chosen every time a stranger opened a game would be
+  // unusable.
+  alone: false, // solo, or with other people
+  pick: null, // the game key the picker is showing
 };
 
 let lobbySocket = null;
@@ -34,7 +41,6 @@ let gameModule = null;
 let mountedId = null;
 let statusEl = null;
 let startButtonEl = null;
-let closeButtonEl = null;
 let boardEl = null;
 // The board's <h2>. mountGame() sets it ONCE, so without a handle it would keep
 // the old language after a switch -- the one place the repaint is easy to miss.
@@ -254,29 +260,59 @@ function renderWhoami() {
 
 // -- lobby screen -----------------------------------------------------------
 
+// Which games the toggle is currently showing.
+//
+// Not a partition, and it must not be made into one. A game is on the solo list
+// if it CAN be played alone and on the other one if it CAN be played with other
+// people, and Snake (1-6 players) is honestly both -- so it appears on both.
+// 2048 seats exactly one, Tic-Tac-Toe needs two, and only those two lists are
+// disjoint by accident.
+function playable(game) {
+  return state.alone ? game.minPlayers === 1 : game.maxPlayers > 1;
+}
+
+// "2-4 players", "2 players" -- and its own string for the one-seat game, because
+// a plural rule is a language's business and not ours to fake with an `s`. 2048
+// read "(1 players)" until this existed.
+function seats(game) {
+  const { minPlayers: min, maxPlayers: max } = game;
+  if (max === 1) return t("ui.players_one");
+  if (min === max) return t("ui.players_exact", { max });
+  return t("ui.players_range", { min, max });
+}
+
 function renderHome() {
+  const games = state.games.filter(playable);
+  if (!games.some((game) => game.key === state.pick)) {
+    state.pick = games[0]?.key ?? null; // the toggle moved out from under it
+  }
+
   const picker = el("select", { id: "game-picker" });
-  for (const game of state.games) {
-    const players =
-      game.minPlayers === game.maxPlayers
-        ? t("ui.players_exact", { max: game.maxPlayers })
-        : t("ui.players_range", { min: game.minPlayers, max: game.maxPlayers });
+  for (const game of games) {
     picker.append(
       el("option", {
         value: game.key,
         // The server's `title` is English and must never be rendered; the game is
         // named here, from its key, in the player's own language.
-        textContent: t("ui.game_with_players", { game: gameTitle(game.key), players }),
+        textContent: t("ui.game_with_players", {
+          game: gameTitle(game.key),
+          players: seats(game),
+        }),
       }),
     );
   }
+  picker.value = state.pick ?? "";
+  picker.onchange = () => {
+    state.pick = picker.value;
+  };
 
   const start = el("button", { className: "primary", textContent: t("ui.start_game") });
+  start.disabled = state.pick === null;
   start.onclick = async () => {
     try {
       const session = await api("/api/sessions", {
         method: "POST",
-        body: JSON.stringify({ game: picker.value }),
+        body: JSON.stringify({ game: state.pick }),
       });
       go(`#/game/${session.id}`);
     } catch (error) {
@@ -287,6 +323,7 @@ function renderHome() {
   appEl.replaceChildren(
     el("section", { className: "panel" }, [
       el("h2", { textContent: t("ui.new_game") }),
+      renderModes(),
       el("div", { className: "row" }, [picker, start]),
     ]),
     el("section", { className: "panel" }, [
@@ -298,6 +335,30 @@ function renderHome() {
           })
         : el("ul", { className: "sessions" }, state.sessions.map(renderSessionRow)),
     ]),
+  );
+}
+
+// Solo or together, above the picker. Two buttons rather than a second <select>:
+// there are two answers, it is the first thing you decide, and a menu you have to
+// open to see two options in is a menu that hides them.
+function renderModes() {
+  const modes = [
+    { alone: false, label: t("ui.together") },
+    { alone: true, label: t("ui.alone") },
+  ];
+
+  return el(
+    "div",
+    { className: "modes" },
+    modes.map(({ alone, label }) => {
+      const button = el("button", { className: "mode", textContent: label });
+      button.dataset.on = String(state.alone === alone);
+      button.onclick = () => {
+        state.alone = alone;
+        renderHome();
+      };
+      return button;
+    }),
   );
 }
 
@@ -377,7 +438,6 @@ function unmountGame() {
   mountedId = null;
   statusEl = null;
   startButtonEl = null;
-  closeButtonEl = null;
   boardEl = null;
   titleEl = null;
   celebratedId = null;
@@ -406,9 +466,6 @@ async function renderGame() {
 
   // Whether the host may start is state-dependent, so re-evaluate every push.
   startButtonEl.hidden = !mayStart(game);
-  // Whether you may close it is not -- but the host arrives as a spectator on a
-  // reload, before the first state push says so, so this cannot be set at mount.
-  closeButtonEl.hidden = !isMine(game);
   titleEl.textContent = gameTitle(game.game);
   statusEl.textContent = describeGame(game);
   renderer.update(game);
@@ -462,8 +519,10 @@ async function mountGame(game) {
     }
   };
 
-  closeButtonEl = closeButton(game.id);
-
+  // No Close button here. Throwing a game away is a thing you do to a game you are
+  // LOOKING AT from the outside -- from the lobby row that is cluttering up your
+  // list -- and it sat one careless click from the board, under a player who was
+  // in the middle of playing it. The host closes their game from the lobby.
   appEl.replaceChildren(
     el("section", { className: "panel" }, [
       titleEl,
@@ -472,7 +531,6 @@ async function mountGame(game) {
       el("div", { className: "row" }, [
         startButtonEl,
         el("button", { textContent: t("ui.back_to_lobby"), onclick: () => go("#/") }),
-        closeButtonEl,
       ]),
     ]),
   );
