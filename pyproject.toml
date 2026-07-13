@@ -1,0 +1,23 @@
+[project]
+name = "waiting-games"
+version = "0.0.0" # the released version is the git tag; semantic-release owns it
+description = "A small multiplayer browser game server"
+readme = "README.md"
+requires-python = ">=3.13"
+license = { file = "LICENSE" }
+
+[tool.ruff]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
+# S101: pytest is built on assert.
+per-file-ignores = { "tests/*" = ["S101"] }
+
+[tool.ruff.lint.flake8-bugbear]
+# A call in an argument default is how FastAPI declares a dependency; B008 is
+# older than that idiom and flags every endpoint without it.
+extend-immutable-calls = ["fastapi.Depends"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

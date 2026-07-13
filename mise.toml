@@ -1,0 +1,4 @@
+[tools]
+python = "3.13"
+pre-commit = "4.2.0"
+ruff = "latest"
