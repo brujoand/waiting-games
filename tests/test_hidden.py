@@ -9,6 +9,7 @@ silently ruins every game.
 from __future__ import annotations
 
 import json
+import unicodedata
 
 import pytest
 
@@ -45,6 +46,51 @@ def leaks(payload: dict, secret: str) -> bool:
 def set_word(game, word="HUNDEHUS"):
     game.apply_move(game.players[game.setter], {"word": word})
     return word
+
+
+# -- the alphabet is the game's piece set, not a locale ----------------------
+
+
+def test_a_word_with_nordic_letters_can_be_set_and_guessed():
+    """ALPHABET validates the word, so a letter missing from it is a letter the
+    word may not contain AND a key nobody can press. Drop Æ, Ø or Å and a
+    Norwegian word is not merely untranslated -- it is unplayable."""
+    game = seat(Hangman)
+    set_word(game, "HØNE")
+
+    for letter in "HØNE":
+        game.apply_move(B, {"letter": letter})
+
+    # Solving it ends the round, which clears the word -- so the result is in
+    # `previous`, not in `solved`.
+    assert game.previous == {"word": "HØNE", "solved": True, "setter": A}
+    assert game.points[1] == 4  # bob got every letter, Ø included
+
+
+@pytest.mark.parametrize("word", ["BLÅBÆR", "SLØYFE", "HØNE"])
+def test_every_nordic_letter_is_playable(word):
+    game = seat(Hangman)
+    set_word(game, word)
+
+    assert set(word) <= set(game.view(0)["alphabet"])
+
+
+def test_a_decomposed_a_ring_is_the_same_letter_as_a_precomposed_one():
+    """Å has two Unicode encodings. Decomposed, it is an A followed by a combining
+    ring -- neither of which is Å -- so a word that is visibly nothing but letters
+    would be rejected for containing non-letters."""
+    decomposed = unicodedata.normalize("NFD", "BLÅBÆR")
+    assert decomposed != "BLÅBÆR"  # the point of the test
+
+    game = seat(Hangman)
+    set_word(game, decomposed)
+
+    assert game.word == "BLÅBÆR"  # normalised on the way in
+
+    # ...and a guess typed the same way still lands.
+    game.apply_move(B, {"letter": unicodedata.normalize("NFD", "Å")})
+    assert "Å" in game.guessed
+    assert game.points[1] == 1  # it was a hit, not a miss
 
 
 def test_the_word_is_hidden_from_the_guesser():

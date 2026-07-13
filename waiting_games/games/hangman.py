@@ -12,9 +12,23 @@ because this is the only game that has them.
 
 from __future__ import annotations
 
+import unicodedata
+
 from .base import Game, InvalidMove, Result
 
-ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+# The alphabet is this game's piece set, like a board having 64 squares. It is
+# NOT a locale, and it must not depend on the word, for two separate reasons:
+#
+#   * a letter that can be in the word but has no key makes that word
+#     unguessable, and the setter wins by construction;
+#   * an alphabet DERIVED from the word would leak the answer -- set HØNE, an Ø
+#     key appears, and every guesser now knows there is an Ø in it. In a game
+#     whose whole premise is a secret word, the keyboard would be telling them.
+#
+# So it is a constant, and the only constant that works is the union of what any
+# player might use. An English player sees three keys they never press; that is
+# the entire cost, and there is no effect on the rules.
+ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ"
 MAX_WRONG = 7  # head, body, two arms, two legs, and the rope
 MIN_LENGTH, MAX_LENGTH = 3, 20
 
@@ -23,6 +37,21 @@ GALLOWS = 3  # to the setter, if nobody solves it
 
 SETTING = "setting"
 GUESSING = "guessing"
+
+
+def normalise(raw: str) -> str:
+    """Fold a typed word or letter into the one form ALPHABET is written in.
+
+    Å has two Unicode encodings, and the decomposed one is an A followed by a
+    combining ring -- neither of which is Å. Without this, a player types a word
+    that is visibly nothing but letters and is told it contains non-letters,
+    which is an impossible thing to be told and an impossible thing to debug.
+
+    The guess path happens to be safe today, because the client sends back the
+    text of a key the server itself rendered. Normalise it anyway: that safety is
+    an accident of the current frontend, not a promise it made.
+    """
+    return unicodedata.normalize("NFC", raw.strip()).upper()
 
 
 class Hangman(Game):
@@ -119,7 +148,7 @@ class Hangman(Game):
         if not isinstance(word, str):
             raise InvalidMove("you must submit a word")
 
-        word = word.strip().upper()
+        word = normalise(word)
         if not MIN_LENGTH <= len(word) <= MAX_LENGTH:
             raise InvalidMove(f"the word must be {MIN_LENGTH}-{MAX_LENGTH} letters")
         if any(letter not in ALPHABET for letter in word):
@@ -133,7 +162,7 @@ class Hangman(Game):
         if not isinstance(letter, str):
             raise InvalidMove("you must guess a letter")
 
-        letter = letter.strip().upper()
+        letter = normalise(letter)
         if len(letter) != 1 or letter not in ALPHABET:
             raise InvalidMove("that is not a letter")
         if letter in self.guessed:
