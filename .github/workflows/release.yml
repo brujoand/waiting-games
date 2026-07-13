@@ -117,3 +117,8 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          # The same version the image is TAGGED with, baked into the image so it
+          # can say out loud what it is. One source, so the badge in the corner
+          # and the tag in the registry cannot drift apart.
+          build-args: |
+            VERSION=${{ needs.version.outputs.version }}

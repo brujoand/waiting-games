@@ -10,6 +10,16 @@ RUN pip install --no-cache-dir -r /requirements.txt
 WORKDIR /app
 COPY waiting_games /app/waiting_games
 
+# The version is stamped in at build time, because it is not knowable from inside
+# the source tree: semantic-release decides it from the commits, AFTER this repo
+# has been written. pyproject.toml says 0.0.0 for exactly the same reason.
+#
+# The default is "dev", which is what a checkout should say -- and a deployed
+# image that somehow says "dev" is telling you its build was wrong, which is more
+# use than a confident lie.
+ARG VERSION=dev
+ENV APP_VERSION=${VERSION}
+
 # Bake the bytecode now, so the image still works with a read-only root
 # filesystem, where Python could not write __pycache__ on import.
 RUN python -m compileall -q /app/waiting_games
