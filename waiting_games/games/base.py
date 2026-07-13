@@ -1,34 +1,67 @@
-"""The contract every game on the platform implements."""
+"""The contract every game on the platform implements.
+
+The platform owns seats, the start gate and the clock. A game owns its board.
+
+Only three members are required: _apply, _result and public_state. The rest have
+defaults that suit a strictly-alternating, perfect-information, reactive game --
+so a simple game never has to mention seats, views, phases or ticks.
+"""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 
 
 class InvalidMove(Exception):
-    """Raised when a player submits a move the game cannot accept."""
+    """Raised when a player submits a move the game cannot accept.
+
+    The message is shown to the player, so write it in English.
+    """
+
+
+@dataclass(frozen=True)
+class Result:
+    """How a game ended. winner_seat is None for a draw."""
+
+    winner_seat: int | None
+
+    @classmethod
+    def draw(cls) -> Result:
+        return cls(winner_seat=None)
+
+    @classmethod
+    def by_score(cls, scores: list[int]) -> Result:
+        """Most points wins; a tie at the top is a draw."""
+        best = max(scores)
+        leaders = [seat for seat, score in enumerate(scores) if score == best]
+        return cls(winner_seat=leaders[0] if len(leaders) == 1 else None)
 
 
 class Game(ABC):
-    """A single round of a game.
-
-    The platform owns players and turn order; a subclass owns the board and the
-    rules. Subclasses implement _apply, _winner_index and public_state, and
-    declare key/title/min_players/max_players as class attributes.
-    """
+    """A single round of a game."""
 
     key: str
-    title: str
+    title: str  # this is what the lobby shows
     min_players: int
     max_players: int
+
+    # Real-time games set a tick rate. This is the single field the session reads
+    # to decide whether the game needs a clock of its own.
+    tick_hz: float | None = None
 
     def __init__(self) -> None:
         self.players: list[str] = []
         self.turn: int = 0
+        self.started: bool = False
         self.over: bool = False
         self.winner: str | None = None
 
     # -- players ---------------------------------------------------------
+
+    @property
+    def realtime(self) -> bool:
+        return self.tick_hz is not None
 
     @property
     def is_full(self) -> bool:
@@ -36,52 +69,143 @@ class Game(ABC):
 
     @property
     def can_start(self) -> bool:
-        return len(self.players) >= self.min_players
+        """Enough players are seated that the host may start."""
+        return not self.started and len(self.players) >= self.min_players
+
+    def seat_of(self, player_id: str) -> int | None:
+        """The player's seat, or None for a spectator."""
+        try:
+            return self.players.index(player_id)
+        except ValueError:
+            return None
 
     def add_player(self, player_id: str) -> None:
+        if self.started:
+            raise InvalidMove("the game has already started")
         if self.is_full:
-            raise InvalidMove("game is full")
+            raise InvalidMove("the game is full")
         if player_id in self.players:
-            raise InvalidMove("already in this game")
+            raise InvalidMove("you are already in this game")
         self.players.append(player_id)
+
+    # -- starting --------------------------------------------------------
+
+    def start(self) -> None:
+        """Deal the board. Called once: by the host, or when the game fills up."""
+        if self.started:
+            raise InvalidMove("the game has already started")
+        if len(self.players) < self.min_players:
+            raise InvalidMove("not enough players")
+        self.started = True
+        self._on_start()
+
+    def _on_start(self) -> None:
+        """Set up whatever depends on the final player count.
+
+        Snake spawns one snake per seat here and Pong hands out the walls. A
+        board game whose board does not depend on the roster needs nothing.
+        """
 
     # -- moves -----------------------------------------------------------
 
     def apply_move(self, player_id: str, move: dict) -> None:
-        """Validate turn order, then hand off to the subclass."""
+        """The platform's rules first, then the game's."""
         if self.over:
-            raise InvalidMove("game is over")
-        if not self.can_start:
-            raise InvalidMove("waiting for another player")
-        if player_id not in self.players:
-            raise InvalidMove("you are not a player in this game")
-        if self.players[self.turn] != player_id:
-            raise InvalidMove("not your turn")
+            raise InvalidMove("the game is over")
+        if not self.started:
+            raise InvalidMove("the game has not started")
 
-        self._apply(self.players.index(player_id), move)
+        seat = self.seat_of(player_id)
+        if seat is None:
+            raise InvalidMove("you are not in this game")
+        if not self._may_move(seat):
+            raise InvalidMove("it is not your turn")
 
-        winner_index = self._winner_index()
-        if winner_index is not None:
-            self.over = True
-            self.winner = self.players[winner_index]
-        elif self._is_draw():
-            self.over = True
-            self.winner = None
+        self._apply(seat, move)
+
+        # In a real-time game a move is intent, not action: tick() decides when
+        # anything actually happens, and when the game ends.
+        if self.realtime:
+            return
+
+        result = self._result()
+        if result is not None:
+            self.finish(result)
         else:
-            self.turn = (self.turn + 1) % len(self.players)
+            self.turn = self._next_seat(seat)
+
+    def finish(self, result: Result) -> None:
+        """End the game. A real-time game calls this from inside tick()."""
+        self.over = True
+        self.winner = (
+            self.players[result.winner_seat] if result.winner_seat is not None else None
+        )
+
+    # -- what every game must say ----------------------------------------
 
     @abstractmethod
     def _apply(self, seat: int, move: dict) -> None:
-        """Apply a legal-by-turn-order move, or raise InvalidMove."""
+        """Apply a move the platform has already allowed, or raise InvalidMove."""
 
     @abstractmethod
-    def _winner_index(self) -> int | None:
-        """Seat index of the winner, or None if nobody has won yet."""
-
-    @abstractmethod
-    def _is_draw(self) -> bool:
-        """True when the game is over with no winner."""
+    def _result(self) -> Result | None:
+        """The outcome, or None while the game is still going."""
 
     @abstractmethod
     def public_state(self) -> dict:
-        """Everything the frontend needs to draw the board."""
+        """Everything a spectator may see."""
+
+    # -- what a game may say ---------------------------------------------
+
+    def _may_move(self, seat: int) -> bool:
+        """Who may move right now. Default: strictly whose turn it is.
+
+        Relax this for a simultaneous phase (both players placing their ships at
+        once) or a role that acts outside the turn order (the Hangman setter).
+        """
+        return seat == self.turn
+
+    def _next_seat(self, seat: int) -> int:
+        """Whose turn it is after `seat` moved. Default: the next player.
+
+        Return `seat` to go again (closing a box in Dots and Boxes), or skip a
+        seat with no legal move (Othello). _result() has already ruled out the
+        case where nobody can move, so there is always someone to hand the turn to.
+        """
+        return (seat + 1) % len(self.players)
+
+    def view(self, seat: int | None) -> dict:
+        """What this seat may see; seat is None for a spectator.
+
+        Default: one board, everybody sees the same. Override for hidden
+        information -- and make the SPECTATOR view the most restricted one, since
+        any logged-in user may open a game socket and watch.
+        """
+        return self.public_state()
+
+    def tick(self, dt: float) -> None:
+        """Advance the simulation. Only called when tick_hz is set.
+
+        dt is seconds since the previous tick, clamped by the session so a slow
+        frame cannot teleport anything through anything. Call finish() to end.
+        """
+
+
+class RealTimeGame(Game):
+    """A game with a clock instead of turns.
+
+    Every seated player may act on every tick, and the game ends when tick() says
+    so rather than when a move lands.
+    """
+
+    tick_hz: float = 15.0
+
+    def _may_move(self, seat: int) -> bool:
+        return True
+
+    def _result(self) -> Result | None:
+        """Never consulted -- apply_move returns early for a real-time game, and
+        tick() ends it by calling finish(). It exists only so that Snake and
+        Pong do not each have to stub out an abstract method that means nothing
+        to them."""
+        return None

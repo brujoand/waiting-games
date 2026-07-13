@@ -25,7 +25,7 @@ MAX_SESSIONS = 10_000
 
 
 class InvalidName(Exception):
-    """Raised when a display name is unusable."""
+    """Raised when a display name is unusable. The message is shown to the player."""
 
 
 @dataclass

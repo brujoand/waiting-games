@@ -11,8 +11,15 @@ target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "S"]
+
+[tool.ruff.lint.per-file-ignores]
 # S101: pytest is built on assert.
-per-file-ignores = { "tests/*" = ["S101"] }
+"tests/*" = ["S101"]
+# S311: shuffling a fleet and spawning food are not security decisions; the
+# stdlib RNG is exactly the right tool. B027: the optional hooks (_on_start,
+# tick) have deliberate no-op defaults -- making them abstract would force
+# every turn-based game to stub out a clock it does not have.
+"waiting_games/games/*" = ["S311", "B027"]
 
 [tool.ruff.lint.flake8-bugbear]
 # A call in an argument default is how FastAPI declares a dependency; B008 is

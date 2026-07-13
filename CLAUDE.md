@@ -30,19 +30,37 @@ docker build -t waiting-games .
 
 - `waiting_games/auth.py` — display names, session cookies. The only source of
   identity.
-- `waiting_games/lobby.py` — game sessions, joining, listing, reaping. All in
-  memory: a restart drops every live game, and it runs as a single instance
-  (two would not share a lobby).
+- `waiting_games/lobby.py` — sessions, joining, starting, reaping, and the
+  real-time clock. All in memory: a restart drops every live game, and it runs
+  as a single instance (two would not share a lobby).
 - `waiting_games/games/` — one module per game. `base.Game` is the contract:
-  the platform owns players and turn order, a subclass owns the board and rules.
+  the platform owns seats, turn order, the start gate and the clock; a subclass
+  owns the board and the rules.
 - `waiting_games/main.py` — HTTP + WebSocket endpoints.
 - `waiting_games/static/` — the frontend. `games/<key>.js` renders game `<key>`.
 
 ## Adding a game
 
-Implement `Game`, register it in `games/__init__.py`, add
-`static/games/<key>.js` exporting `render(root, state, me, send)`. Nothing else
-should need to change — if it does, the abstraction is wrong.
+Implement `Game` — only `_apply`, `_result` and `public_state` are required —
+register it in `games/__init__.py`, and add `static/games/<key>.js` exporting
+`create({root, me, send}) -> {update, destroy}`. Nothing else should need to
+change; if it does, the abstraction is wrong.
+
+Two things to get right:
+
+- **Hidden information lives in `view(seat)`**, and the spectator view
+  (`seat is None`) must be the MOST restricted one — any logged-in user may open
+  a game socket and watch. Battleship and Hangman are the worked examples.
+- **A real-time game** subclasses `RealTimeGame` and sets `tick_hz`. A move is
+  then *intent*: `tick()` decides what actually happens and when the game ends,
+  and the tick loop — not the move handler — broadcasts. Don't echo real-time
+  input back; it turns held keys into a fan-out storm.
+
+A game's `key` is also its renderer's filename. Renaming one renames both.
+
+## Language
+
+Player-facing text is English: game titles, `InvalidMove` messages, UI strings.
 
 ## Releases
 
