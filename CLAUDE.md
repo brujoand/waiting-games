@@ -6,10 +6,20 @@ container image.
 
 ## Hard rules
 
-- **Never authenticate on a request header.** Identity comes from the session
-  cookie and nothing else. A header is set by whoever is talking to us, so
-  trusting one (`X-Auth-*`, `X-Forwarded-User`, …) lets anybody be anybody.
-  There is a test that fails if this is reintroduced — do not delete it.
+- **Never authenticate on a request header** unless the deployment can guarantee
+  the header cannot come from a client. By default a header is set by whoever is
+  talking to us, so trusting one (`X-Auth-*`, `X-Forwarded-User`, …) lets anybody
+  be anybody. `test_a_forged_identity_header_is_ignored` fails if that is
+  reintroduced in the default mode — do not delete it.
+
+  The one sanctioned exception is `TRUSTED_PROXY_AUTH=1`, which takes identity
+  from `X-Auth-Sub`/`X-Auth-Email`. It is safe **only** behind a proxy that
+  authenticates, *and* a network policy that makes that proxy the sole thing able
+  to reach this process. The code cannot check either; the flag is an operator's
+  assertion, and if it is wrong the server is handed to anyone who can send a
+  header. Only `sub` and `email` are trusted, because those are the only claims
+  guaranteed to be in the token — a header backing an *optional* claim is one the
+  proxy leaves alone, and therefore one the client still controls.
 - **Never push to `main`.** Every change lands via a branch and a PR. CI must be
   green before merge.
 - Commits follow Conventional Commits; the type decides the next release.

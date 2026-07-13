@@ -28,8 +28,18 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.requests import HTTPConnection
 
-from .auth import COOKIE_NAME, SESSION_TTL, InvalidName, Player, Sessions
+from .auth import (
+    COOKIE_NAME,
+    SESSION_TTL,
+    CookieIdentity,
+    Identity,
+    InvalidName,
+    Player,
+    ProxyIdentity,
+    Sessions,
+)
 from .games import GAMES, InvalidMove
 from .lobby import Lobby
 
@@ -41,10 +51,18 @@ STATIC = Path(__file__).parent / "static"
 # on http://localhost -- a broken default is worse than an opt-in flag.
 SECURE_COOKIE = os.environ.get("SECURE_COOKIE") == "1"
 
+# Take identity from the proxy's headers instead of our own cookie. Safe ONLY
+# where the proxy is the sole thing that can reach this process -- read auth.py's
+# module docstring before setting it. The code cannot check the precondition;
+# this flag is you asserting it.
+TRUSTED_PROXY_AUTH = os.environ.get("TRUSTED_PROXY_AUTH") == "1"
+
 REAP_INTERVAL = 60
 
 lobby = Lobby()
-sessions = Sessions()
+sessions = Sessions()  # unused, and permanently empty, in proxy mode
+
+IDENTITY: Identity = ProxyIdentity() if TRUSTED_PROXY_AUTH else CookieIdentity(sessions)
 
 
 # A real-time client sends a direction only when it CHANGES, so an honest one is
@@ -98,16 +116,22 @@ async def reap_forever() -> None:
 app = FastAPI(title="Waiting Games", lifespan=lifespan)
 
 
-def identify(cookies) -> Player:
-    """Resolve the caller from their session cookie, or refuse to serve them."""
-    player = sessions.resolve(cookies.get(COOKIE_NAME))
+def identify(conn: HTTPConnection) -> Player:
+    """Resolve the caller however this deployment does identity, or refuse them.
+
+    It takes the CONNECTION, not the cookies: Request and WebSocket both subclass
+    HTTPConnection, which is where .cookies and .headers live. So this one
+    function serves the HTTP dependency and both WebSocket handshakes, and there
+    is no second code path for an identity rule to be forgotten in.
+    """
+    player = IDENTITY.identify(conn)
     if player is None:
         raise HTTPException(status_code=401, detail={"code": "auth.not_signed_in"})
     return player
 
 
 def current_player(request: Request) -> Player:
-    return identify(request.cookies)
+    return identify(request)
 
 
 async def receive_message(websocket: WebSocket) -> dict:
@@ -130,8 +154,34 @@ async def healthz() -> dict:
     return {"ok": True}
 
 
+def require_login_endpoint() -> None:
+    """In proxy mode there is no name to claim: the proxy has already said who you
+    are. 404, not 403 -- the endpoint does not exist in this deployment.
+
+    Guarded here rather than by registering the route conditionally: `app` is a
+    module singleton the tests import, so conditional registration would force an
+    app factory or a reload, and buy nothing.
+    """
+    if not IDENTITY.login_enabled:
+        raise HTTPException(status_code=404, detail={"code": "auth.login_disabled"})
+
+
+@app.get("/api/config")
+async def config() -> dict:
+    """What the browser must know BEFORE it can render anything. No identity
+    required -- the login screen is the thing that depends on the answer.
+
+    It matters because of the failure path: in proxy mode a 401 from /api/me means
+    the proxy did not inject its headers, and rendering a name form there would be
+    actively wrong. The form would 404 on submit, and the player would be left
+    filling in a box that cannot help them.
+    """
+    return {"authMode": IDENTITY.mode}
+
+
 @app.post("/api/login")
 async def login(body: dict, response: Response) -> dict:
+    require_login_endpoint()
     try:
         token, player = sessions.login(body.get("name", ""))
     except InvalidName as exc:
@@ -150,6 +200,9 @@ async def login(body: dict, response: Response) -> dict:
 
 @app.post("/api/logout", status_code=204)
 async def logout(request: Request, response: Response) -> None:
+    # Signing out of a proxy-authenticated session means signing out of the
+    # identity provider, and the proxy owns that session, not us.
+    require_login_endpoint()
     sessions.logout(request.cookies.get(COOKIE_NAME))
     response.delete_cookie(COOKIE_NAME, httponly=True, samesite="lax")
 
@@ -224,7 +277,7 @@ async def start_session(
 @app.websocket("/ws/lobby")
 async def lobby_socket(websocket: WebSocket) -> None:
     try:
-        player = identify(websocket.cookies)
+        player = identify(websocket)
     except HTTPException:
         await websocket.close(code=1008)
         return
@@ -246,7 +299,7 @@ async def lobby_socket(websocket: WebSocket) -> None:
 @app.websocket("/ws/sessions/{session_id}")
 async def game_socket(websocket: WebSocket, session_id: str) -> None:
     try:
-        player = identify(websocket.cookies)
+        player = identify(websocket)
     except HTTPException:
         await websocket.close(code=1008)
         return
