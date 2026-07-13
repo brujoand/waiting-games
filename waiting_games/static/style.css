@@ -538,3 +538,55 @@ header {
   font-size: 0.85rem;
   color: var(--muted);
 }
+
+/* -- on-screen controls ---------------------------------------------------- */
+
+.touchpad {
+  display: grid;
+  gap: 8px;
+  max-width: 28rem;
+  margin-bottom: 1rem;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+/* A real mouse means real keys, so hide them there.
+   Note which way this fails: shown by DEFAULT, hidden only on a confident
+   mouse. Get the query wrong and you see buttons you did not need -- rather
+   than a game you cannot play, which is what happened when the swipe was the
+   only way in. */
+@media (hover: hover) and (pointer: fine) {
+  .touchpad {
+    display: none;
+  }
+}
+
+.touchpad-dpad {
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-areas:
+    ".    up   ."
+    "left down right";
+}
+
+.touchpad-paddle {
+  grid-template-columns: 1fr 1fr;
+  grid-template-areas: "left right";
+}
+
+.touchpad-key {
+  padding: 0.9rem 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  color: var(--ink);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.touchpad-key:active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}

@@ -139,8 +139,11 @@ export function swipe(element, intend, directions) {
   let origin = null;
 
   const start = (event) => {
+    // Tell the browser this gesture is ours. touch-action:none should already
+    // have done it, but a swipe that silently becomes a page scroll is exactly
+    // the failure this had in the field, and saying it twice is free.
+    event.preventDefault();
     origin = { x: event.clientX, y: event.clientY };
-    element.setPointerCapture?.(event.pointerId);
   };
 
   const move = (event) => {
@@ -165,16 +168,19 @@ export function swipe(element, intend, directions) {
     origin = null;
   };
 
+  // move/up on the WINDOW, not the element. setPointerCapture was doing this job
+  // and is the one exotic API in the path, so it is gone: a finger that strays
+  // off the board mid-swipe still steers, and there is nothing left to misbehave.
   element.addEventListener("pointerdown", start);
-  element.addEventListener("pointermove", move);
-  element.addEventListener("pointerup", end);
-  element.addEventListener("pointercancel", end);
+  window.addEventListener("pointermove", move);
+  window.addEventListener("pointerup", end);
+  window.addEventListener("pointercancel", end);
 
   return () => {
     element.removeEventListener("pointerdown", start);
-    element.removeEventListener("pointermove", move);
-    element.removeEventListener("pointerup", end);
-    element.removeEventListener("pointercancel", end);
+    window.removeEventListener("pointermove", move);
+    window.removeEventListener("pointerup", end);
+    window.removeEventListener("pointercancel", end);
   };
 }
 
@@ -226,4 +232,54 @@ export function halves(element, intend, { left, right, release }) {
     element.removeEventListener("pointerup", lift);
     element.removeEventListener("pointercancel", lift);
   };
+}
+
+/**
+ * On-screen controls, under the board.
+ *
+ * These exist because a swipe is a negotiation with the browser and a button is
+ * not. Gesture arbitration, `touch-action`, pointer capture, a parent that
+ * scrolls -- any of them can quietly eat a swipe, and when one did, the game was
+ * simply unplayable with no way to tell why. A <button> that sends on pointerdown
+ * has none of those moving parts.
+ *
+ * So they are the FLOOR, not a fallback: shown by default, and hidden only where
+ * a real mouse is detected. If the detection is wrong, you get buttons you did
+ * not need -- which is the harmless direction to fail in.
+ *
+ * `hold` is for a control that means something while held (Pong's paddle) rather
+ * than at the moment it is pressed (Snake's turn).
+ */
+export function pad(root, intend, { buttons, hold = null, className = "" }) {
+  const element = document.createElement("div");
+  element.className = `touchpad ${className}`.trim();
+
+  for (const { label, intent, area } of buttons) {
+    const button = document.createElement("button");
+    button.className = "touchpad-key";
+    button.type = "button";
+    button.textContent = label;
+    button.style.gridArea = area;
+    // aria-hidden: the label is a glyph, and the keyboard already works.
+    button.setAttribute("aria-label", label);
+
+    // pointerdown, not click: a click waits for the release, and a game that
+    // waits for your finger to come up feels broken long before it is.
+    button.addEventListener("pointerdown", (event) => {
+      event.preventDefault();
+      intend(intent);
+    });
+
+    if (hold !== null) {
+      const release = () => intend(hold);
+      button.addEventListener("pointerup", release);
+      button.addEventListener("pointerleave", release);
+      button.addEventListener("pointercancel", release);
+    }
+
+    element.append(button);
+  }
+
+  root.append(element);
+  return () => element.remove();
 }
