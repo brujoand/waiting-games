@@ -249,6 +249,9 @@ async def create_session(body: dict, player: Player = Depends(current_player)) -
         session = lobby.create(body.get("game", ""), player)
     except InvalidMove as exc:
         raise HTTPException(status_code=400, detail=exc.as_dict()) from exc
+    # A one-seat game is born full, and lobby.create starts it -- so it may already
+    # need a clock. A no-op for everything else, exactly as it is on join.
+    await lobby.launch(session)
     await lobby.broadcast_lobby()
     return session.summary()
 

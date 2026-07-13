@@ -1,5 +1,9 @@
 // Shared plumbing for the real-time games: a canvas, and the ways to steer it.
 //
+// The steering half is not only theirs -- 2048 is a dom game and takes the same
+// four directions, so it takes the same keys() and swipe(). It just skips
+// onChange(), which is the piece that is specific to a game with a heading.
+//
 // A canvas game must NOT redraw from the state push. The server ticks at 8-30 Hz;
 // the browser paints at 60. Painting from a requestAnimationFrame loop that reads
 // the latest frame decouples the two, so a dropped or late frame is a smooth
@@ -100,7 +104,15 @@ export function keys(bindings, intend, onRelease = null) {
   const press = (event) => {
     const intent = bindings[event.key];
     if (intent === undefined) return;
+    // Even on a repeat: the arrow keys still scroll the page otherwise.
     event.preventDefault();
+
+    // Autorepeat is the keyboard describing one press, not the player making a
+    // second one. A real-time game already swallows the difference in onChange(),
+    // but 2048 acts on every message it sends -- and a held key there means a
+    // board sliding thirty times a second.
+    if (event.repeat) return;
+
     if (!down.includes(event.key)) down.push(event.key);
     intend(intent);
   };
