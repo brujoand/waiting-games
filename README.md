@@ -2,7 +2,12 @@
 
 A small multiplayer browser game server, for playing something with the people
 in the room while you all wait for something else. Pick a name, start a game,
-share the page. Currently: tic tac toe.
+share the page.
+
+Nine games: Tic-Tac-Toe, Connect Four, Othello, Dots and Boxes, Nim, Hangman,
+Battleship, Snake and Pong. Some are strictly turn-based, some hide information
+from the other player (Battleship's fleet, Hangman's word), and Snake and Pong
+run on a clock rather than turns.
 
 ## Run it
 
@@ -38,10 +43,16 @@ uvicorn waiting_games.main:app --reload --port 8080
 
 ## Add a game
 
-A game owns its board and its rules; the platform owns players, turn order and
-the lobby. Implement `Game` (see `waiting_games/games/base.py`), register it in
-`waiting_games/games/__init__.py`, and add a matching renderer at
-`waiting_games/static/games/<key>.js` exporting `render(root, state, me, send)`.
+A game owns its board and its rules; the platform owns seats, turn order, the
+start gate and the clock. Implement `Game` (see `waiting_games/games/base.py`) —
+only `_apply`, `_result` and `public_state` are required — register it in
+`waiting_games/games/__init__.py`, and add a renderer at
+`waiting_games/static/games/<key>.js` exporting
+`create({root, me, send}) -> {update, destroy}`.
+
+Hidden information goes in `view(seat)`, and the spectator view (`seat is None`)
+must be the most restricted one: any logged-in user may open a game socket and
+watch. A real-time game sets `tick_hz` and subclasses `RealTimeGame`.
 
 ## Conventions
 

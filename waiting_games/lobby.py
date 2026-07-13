@@ -10,10 +10,43 @@ from dataclasses import dataclass, field
 from .auth import Player
 from .games import GAMES, Game, InvalidMove
 
-# A game nobody ever joined, and a game long since finished, are both garbage.
+# A game nobody ever joined, a game long since finished, and a game everyone
+# walked away from mid-play are all garbage.
 WAITING_TTL = 30 * 60
 FINISHED_TTL = 5 * 60
+EMPTY_TTL = 60
+REAP_INTERVAL = 60
 MAX_SESSIONS = 100
+
+# A real-time game never integrates more than this many frames' worth of time in
+# one tick, however long the event loop was away.
+TICK_CATCHUP = 3
+
+# The keys the platform puts in every state payload. A game's view() is merged
+# over these, so a game returning one of them would silently clobber the platform
+# and break the lobby in a way that looks like a frontend bug. Tested, not
+# promised -- see test_no_game_view_collides_with_a_platform_key.
+RESERVED_KEYS = frozenset(
+    {
+        "id",
+        "game",
+        "title",
+        "status",
+        "host",
+        "hostSub",
+        "players",
+        "seats",
+        "joinable",
+        "canStart",
+        "playerNames",
+        "seat",
+        "turn",
+        "over",
+        "winner",
+        "draw",
+        "connected",
+    }
+)
 
 
 @dataclass
@@ -28,11 +61,22 @@ class Session:
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     sockets: set = field(default_factory=set)
 
+    # When the last socket left. A started game nobody is watching is neither
+    # waiting nor finished, so without this it would never be reaped.
+    empty_since: float | None = field(default_factory=time.monotonic)
+
+    # A real-time game's clock, and the gate that stops it while nobody watches.
+    tick_task: asyncio.Task | None = None
+    watchers: asyncio.Event = field(default_factory=asyncio.Event)
+    # Sockets with a frame still in flight. A real-time game skips them rather
+    # than waiting -- see Lobby.stream.
+    sending: set = field(default_factory=set)
+
     @property
     def status(self) -> str:
         if self.engine.over:
             return "finished"
-        return "active" if self.engine.can_start else "waiting"
+        return "active" if self.engine.started else "waiting"
 
     def summary(self) -> dict:
         """The shape the lobby list renders."""
@@ -42,27 +86,47 @@ class Session:
             "title": self.engine.title,
             "status": self.status,
             "host": self.players[self.host].name if self.host in self.players else "?",
+            # A display name is not an identity: the client needs the sub to know
+            # whether to show itself a Start button.
+            "hostSub": self.host,
             "players": [p.name for p in self.players.values()],
             "seats": f"{len(self.players)}/{self.engine.max_players}",
             "joinable": self.status == "waiting" and not self.engine.is_full,
+            "canStart": self.engine.can_start,
         }
 
-    def state(self) -> dict:
-        """Full game state, pushed to both players on every change."""
+    def state(self, seat: int | None) -> dict:
+        """The game as this seat is allowed to see it. seat None is a spectator."""
         engine = self.engine
         turn = (
-            engine.players[engine.turn] if engine.players and not engine.over else None
+            None
+            if engine.realtime or engine.over or not engine.started
+            else engine.players[engine.turn]
         )
         return {
             **self.summary(),
             "playerNames": {p.sub: p.name for p in self.players.values()},
+            "seat": seat,
             "turn": turn,
             "over": engine.over,
             "winner": engine.winner,
             "draw": engine.over and engine.winner is None,
             "connected": [sub for sub, _ in self.sockets],
-            **engine.public_state(),
+            **engine.view(seat),
         }
+
+    def frames(self) -> dict[int | None, dict]:
+        """One payload per distinct seat watching, not one per socket."""
+        seats = {self.engine.seat_of(sub) for sub, _ in self.sockets}
+        return {seat: {"type": "state", "data": self.state(seat)} for seat in seats}
+
+    def note_sockets_changed(self) -> None:
+        if self.sockets:
+            self.empty_since = None
+            self.watchers.set()
+        else:
+            self.empty_since = time.monotonic()
+            self.watchers.clear()  # a real-time clock parks itself on this
 
 
 class Lobby:
@@ -72,6 +136,12 @@ class Lobby:
 
     # -- sessions --------------------------------------------------------
 
+    def require(self, session_id: str) -> Session:
+        session = self.sessions.get(session_id)
+        if session is None:
+            raise InvalidMove("no such game")
+        return session
+
     def create(self, game_key: str, player: Player) -> Session:
         if game_key not in GAMES:
             raise InvalidMove(f"unknown game: {game_key}")
@@ -79,7 +149,7 @@ class Lobby:
         # One open game per host: starting a new one abandons the old.
         for existing in [s for s in self.sessions.values() if s.host == player.sub]:
             if existing.status == "waiting":
-                del self.sessions[existing.id]
+                self.drop(existing.id)
 
         self.reap()
         if len(self.sessions) >= MAX_SESSIONS:
@@ -98,18 +168,38 @@ class Lobby:
         return session
 
     def join(self, session_id: str, player: Player) -> Session:
-        session = self.sessions.get(session_id)
-        if session is None:
-            raise InvalidMove("no such game")
+        session = self.require(session_id)
         if player.sub in session.players:
             return session  # rejoining your own game is a no-op, not an error
-        if session.engine.is_full:
-            raise InvalidMove("game is full")
-        if session.engine.over:
-            raise InvalidMove("game is over")
+
         session.engine.add_player(player.sub)
         session.players[player.sub] = player
+
+        # Nobody else can get in, so there is nothing left to wait for.
+        if session.engine.is_full:
+            self._start(session)
         return session
+
+    def begin(self, session_id: str, player: Player) -> Session:
+        """The host starts early, without waiting for the game to fill up."""
+        session = self.require(session_id)
+        if session.host != player.sub:
+            raise InvalidMove("only the host can start the game")
+        self._start(session)
+        return session
+
+    def _start(self, session: Session) -> None:
+        """Start the game and give everyone a fresh window to connect.
+
+        Restarting the empty-clock here is load-bearing. It is set when the
+        session is CREATED, and a game can sit in the lobby for many minutes
+        before an opponent turns up -- so by the time a join auto-starts it, the
+        clock is long past EMPTY_TTL and the reaper would delete a game that has
+        this instant begun, before either player's socket has attached.
+        "Never watched yet" and "watched, then abandoned" need different clocks.
+        """
+        session.engine.start()
+        session.note_sockets_changed()
 
     def listing(self) -> list[dict]:
         return [s.summary() for s in self.sessions.values() if s.status != "finished"]
@@ -117,38 +207,180 @@ class Lobby:
     # -- broadcast -------------------------------------------------------
 
     async def broadcast_state(self, session: Session) -> None:
-        await _send_all(session.sockets, {"type": "state", "data": session.state()})
+        await self.fanout(session, session.frames())
+
+    async def fanout(self, session: Session, frames: dict[int | None, dict]) -> None:
+        """Give every socket the frame for its seat.
+
+        Concurrently: one client with a full TCP window must not delay the rest.
+        NEVER call this while holding session.lock -- apply_move takes the same
+        lock, so a slow socket would turn into input lag for every player.
+
+        `frames` is a snapshot taken under the lock, so a socket that connected
+        after it was built has no frame here. Skip it: its own connect broadcast
+        is already on its way, and looking the seat up blindly would KeyError and
+        tear down the handler of whoever happened to be moving.
+        """
+        entries = [
+            (sub, websocket)
+            for sub, websocket in session.sockets
+            if session.engine.seat_of(sub) in frames
+        ]
+        if not entries:
+            return
+
+        results = await asyncio.gather(
+            *(
+                websocket.send_json(frames[session.engine.seat_of(sub)])
+                for sub, websocket in entries
+            ),
+            return_exceptions=True,
+        )
+        # gather() preserves order and length, so these zip 1:1 by construction.
+        for entry, result in zip(entries, results, strict=True):
+            if isinstance(result, Exception):  # a dead socket is not an error
+                session.sockets.discard(entry)
+        session.note_sockets_changed()
+
+    def stream(self, session: Session, frames: dict[int | None, dict]) -> None:
+        """Push a frame at every socket WITHOUT waiting for any of them.
+
+        This is what the clock uses, and the difference from fanout() is the
+        whole reason it exists. fanout() gathers, so it does not return until the
+        slowest socket in the room has taken its frame -- and the clock awaits it,
+        so one player on a flaky connection would freeze the match for everybody
+        else, every tick, for as long as their send took to fail.
+
+        Here each socket carries at most one frame at a time, and a socket still
+        busy with the last one simply MISSES this one. A real-time game would far
+        rather drop a frame for a slow client than hold the whole room to its
+        pace; the client is painting from its own rAF loop and will never notice.
+        """
+        for entry in list(session.sockets):
+            sub, websocket = entry
+            seat = session.engine.seat_of(sub)
+            if seat not in frames or websocket in session.sending:
+                continue
+            session.sending.add(websocket)
+            asyncio.create_task(self._deliver(session, entry, frames[seat]))
+
+    async def _deliver(self, session: Session, entry, frame: dict) -> None:
+        websocket = entry[1]
+        try:
+            await websocket.send_json(frame)
+        except Exception:  # noqa: BLE001 - a dead socket is not an error
+            session.sockets.discard(entry)
+            session.note_sockets_changed()
+        finally:
+            session.sending.discard(websocket)
 
     async def broadcast_lobby(self) -> None:
-        await _send_all(
-            self.lobby_sockets, {"type": "sessions", "data": self.listing()}
-        )
+        """The lobby listing genuinely is the same for everyone."""
+        message = {"type": "sessions", "data": self.listing()}
+        for entry in list(self.lobby_sockets):
+            _, websocket = entry
+            try:
+                await websocket.send_json(message)
+            except Exception:  # noqa: BLE001 - a dead socket is not an error
+                self.lobby_sockets.discard(entry)
+
+    # -- the clock, for real-time games -----------------------------------
+
+    async def launch(self, session: Session) -> None:
+        """Give a started real-time game a clock. A no-op for everything else.
+
+        Separate from _start because _start is called from synchronous code (and
+        from tests, where there is no event loop to create a task on).
+        """
+        if not session.engine.realtime or not session.engine.started:
+            return
+        if session.tick_task is None:
+            session.tick_task = asyncio.create_task(self._tick_forever(session))
+
+    async def _tick_forever(self, session: Session) -> None:
+        engine = session.engine
+        interval = 1.0 / engine.tick_hz
+        longest_frame = interval * TICK_CATCHUP
+        loop = asyncio.get_running_loop()
+
+        try:
+            last = loop.time()
+            next_at = last + interval
+
+            while True:
+                # Nobody is watching: park the clock rather than simulate into an
+                # empty room. This costs ZERO cpu, not "a little" -- and a player
+                # who reloads the page does not come back to a corpse. If they
+                # never come back, the reaper collects the session and cancels us.
+                if not session.sockets:
+                    await session.watchers.wait()
+                    last = (
+                        loop.time()
+                    )  # the pause never happened, as far as the world knows
+                    next_at = last + interval
+
+                await asyncio.sleep(max(0.0, next_at - loop.time()))
+                now = loop.time()
+
+                # Clamp. A garbage collection pause, a slow broadcast, or a
+                # laptop lid must not integrate a huge dt and teleport the ball
+                # straight through a paddle.
+                dt = min(now - last, longest_frame)
+                last = now
+                # Schedule against a fixed grid, but never try to catch up on a
+                # backlog: drop the frames instead of spiralling.
+                next_at = max(next_at + interval, now)
+
+                async with session.lock:
+                    if engine.over:
+                        break
+                    engine.tick(dt)
+                    frames = session.frames()
+
+                # Outside the lock, and WITHOUT waiting: the clock must not be
+                # serialised on the slowest socket in the room. See stream().
+                self.stream(session, frames)
+
+            # The last frame carries the result, so this one we do wait for.
+            await self.broadcast_state(session)
+            await self.broadcast_lobby()
+        finally:
+            session.tick_task = None
 
     # -- reaping ---------------------------------------------------------
 
     def reap(self) -> int:
         now = time.monotonic()
         stale = []
+
         for session in self.sessions.values():
             if session.engine.over:
                 if session.finished_at is None:
                     session.finished_at = now
                 elif now - session.finished_at > FINISHED_TTL:
                     stale.append(session.id)
-            elif (
-                not session.engine.can_start and now - session.created_at > WAITING_TTL
-            ):
+            elif session.engine.started:
+                # Everyone closed the tab mid-game; nothing will ever finish it.
+                empty = session.empty_since
+                if empty is not None and now - empty > EMPTY_TTL:
+                    stale.append(session.id)
+            elif now - session.created_at > WAITING_TTL:
                 stale.append(session.id)
+
         for session_id in stale:
-            del self.sessions[session_id]
+            self.drop(session_id)
         return len(stale)
 
+    def drop(self, session_id: str) -> None:
+        """Forget a session, and stop its clock if it had one.
 
-async def _send_all(sockets: set, message: dict) -> None:
-    """Fan a message out, dropping any socket that has gone away."""
-    for entry in list(sockets):
-        _, websocket = entry
-        try:
-            await websocket.send_json(message)
-        except Exception:  # noqa: BLE001 - a dead socket is not an error worth raising
-            sockets.discard(entry)
+        A tick task holds a reference to its session, so dropping the session
+        without cancelling the task would leave it ticking an orphan forever.
+        """
+        session = self.sessions.pop(session_id, None)
+        if session is not None and session.tick_task is not None:
+            session.tick_task.cancel()
+
+    def shutdown(self) -> None:
+        for session_id in list(self.sessions):
+            self.drop(session_id)

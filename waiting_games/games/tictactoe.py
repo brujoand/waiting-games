@@ -1,8 +1,8 @@
-"""Tic tac toe: two players, a 3x3 board, X moves first."""
+"""Tic-Tac-Toe: two players, 3x3 board, X goes first."""
 
 from __future__ import annotations
 
-from .base import Game, InvalidMove
+from .base import Game, InvalidMove, Result
 
 # fmt: off
 LINES = (
@@ -17,7 +17,7 @@ MARKS = ("X", "O")
 
 class TicTacToe(Game):
     key = "tictactoe"
-    title = "Tic Tac Toe"
+    title = "Tic-Tac-Toe"
     min_players = 2
     max_players = 2
 
@@ -29,22 +29,19 @@ class TicTacToe(Game):
         cell = move.get("cell")
         # bool is a subclass of int, and board[True] is a legal index into cell 1.
         if isinstance(cell, bool) or not isinstance(cell, int) or not 0 <= cell <= 8:
-            raise InvalidMove("cell must be 0-8")
+            raise InvalidMove("the cell must be 0-8")
         if self.board[cell] is not None:
-            raise InvalidMove("that cell is taken")
+            raise InvalidMove("the cell is occupied")
         self.board[cell] = MARKS[seat]
 
-    def _winner_index(self) -> int | None:
+    def _result(self) -> Result | None:
         for a, b, c in LINES:
-            if (
-                self.board[a] is not None
-                and self.board[a] == self.board[b] == self.board[c]
-            ):
-                return MARKS.index(self.board[a])
+            mark = self.board[a]
+            if mark is not None and mark == self.board[b] == self.board[c]:
+                return Result(winner_seat=MARKS.index(mark))
+        if all(cell is not None for cell in self.board):
+            return Result.draw()
         return None
-
-    def _is_draw(self) -> bool:
-        return all(cell is not None for cell in self.board)
 
     def public_state(self) -> dict:
         return {

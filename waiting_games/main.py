@@ -4,9 +4,9 @@ Players claim a display name, get a session cookie, and play. See auth.py for
 what that cookie is and is not worth.
 
 Everything lives in memory: restart the process and every game is gone. That is
-a deliberate trade for a server whose longest-lived object is a tic tac toe
-board, and it is why this runs as a single instance -- two replicas behind a
-load balancer would not share a lobby.
+a deliberate trade for a server whose longest-lived object is a game board, and
+it is why this runs as a single instance -- two behind a load balancer would not
+share a lobby.
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import os
+import time
 from pathlib import Path
 
 from fastapi import (
@@ -46,6 +47,33 @@ lobby = Lobby()
 sessions = Sessions()
 
 
+# A real-time client sends a direction only when it CHANGES, so an honest one is
+# nowhere near this even holding a key down. The bucket is a backstop, not the
+# defence: the real one is that a real-time move never broadcasts, so a flood
+# cannot amplify into a single extra outgoing frame.
+MOVES_PER_SECOND = 20.0
+MOVE_BURST = 30
+
+
+class TokenBucket:
+    """One per socket. Created with the connection, collected with it."""
+
+    def __init__(self, rate: float = MOVES_PER_SECOND, burst: int = MOVE_BURST) -> None:
+        self.rate = rate
+        self.burst = burst
+        self.tokens = float(burst)
+        self.checked = time.monotonic()
+
+    def take(self) -> bool:
+        now = time.monotonic()
+        self.tokens = min(self.burst, self.tokens + (now - self.checked) * self.rate)
+        self.checked = now
+        if self.tokens < 1.0:
+            return False
+        self.tokens -= 1.0
+        return True
+
+
 @contextlib.asynccontextmanager
 async def lifespan(_: FastAPI):
     reaper = asyncio.create_task(reap_forever())
@@ -55,6 +83,8 @@ async def lifespan(_: FastAPI):
         reaper.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await reaper
+        # Every live game's clock goes with us.
+        lobby.shutdown()
 
 
 async def reap_forever() -> None:
@@ -96,6 +126,7 @@ async def receive_message(websocket: WebSocket) -> dict:
 
 @app.get("/healthz")
 async def healthz() -> dict:
+    # A health probe has no session, so this one route must not require identity.
     return {"ok": True}
 
 
@@ -131,7 +162,12 @@ async def me(player: Player = Depends(current_player)) -> dict:
 @app.get("/api/games")
 async def games() -> list[dict]:
     return [
-        {"key": g.key, "title": g.title, "players": g.max_players}
+        {
+            "key": g.key,
+            "title": g.title,
+            "minPlayers": g.min_players,
+            "maxPlayers": g.max_players,
+        }
         for g in GAMES.values()
     ]
 
@@ -159,6 +195,24 @@ async def join_session(
         session = lobby.join(session_id, player)
     except InvalidMove as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    # Filling up auto-starts the game, which for Snake or Pong means the clock
+    # starts too. launch() is a no-op for anything turn-based.
+    await lobby.launch(session)
+    await lobby.broadcast_state(session)
+    await lobby.broadcast_lobby()
+    return session.summary()
+
+
+@app.post("/api/sessions/{session_id}/start")
+async def start_session(
+    session_id: str, player: Player = Depends(current_player)
+) -> dict:
+    """The host starts a game that is not full -- nobody else is coming."""
+    try:
+        session = lobby.begin(session_id, player)
+    except InvalidMove as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await lobby.launch(session)
     await lobby.broadcast_state(session)
     await lobby.broadcast_lobby()
     return session.summary()
@@ -202,8 +256,12 @@ async def game_socket(websocket: WebSocket, session_id: str) -> None:
     await websocket.accept()
     entry = (player.sub, websocket)
     session.sockets.add(entry)
-    # Anyone may watch; only seated players may move.
+    session.note_sockets_changed()
+    # Anyone may watch; only seated players may move. This is why a game with
+    # secrets must make view(None) its most restricted view.
     await lobby.broadcast_state(session)
+
+    bucket = TokenBucket()
 
     try:
         while True:
@@ -217,24 +275,51 @@ async def game_socket(websocket: WebSocket, session_id: str) -> None:
             if kind != "move":
                 continue
 
+            if not bucket.take():
+                # Drop it, silently. Answering a flood with an error frame per
+                # message is how you turn a misbehaving client into an amplifier.
+                continue
+
+            realtime = session.engine.realtime
+
             async with session.lock:
                 try:
                     session.engine.apply_move(player.sub, message.get("data", {}))
                 except InvalidMove as exc:
-                    await websocket.send_json(
-                        {"type": "error", "data": {"message": str(exc)}}
-                    )
+                    # A real-time client has nothing useful to do with "you
+                    # cannot reverse into yourself", and replying per rejected
+                    # message is the same amplifier as above.
+                    if not realtime:
+                        await websocket.send_json(
+                            {"type": "error", "data": {"message": str(exc)}}
+                        )
                     continue
                 became_final = session.engine.over
+                # In a real-time game a move is INTENT, not action: the tick loop
+                # decides when the world changes, and the tick loop broadcasts.
+                # Echoing input here would let four players holding a key turn
+                # into a fan-out storm, and would fight the clock for the wire.
+                frames = None if realtime else session.frames()
 
-            await lobby.broadcast_state(session)
-            if became_final:
-                await lobby.broadcast_lobby()
+            # Sending happens OUTSIDE the lock: fanout awaits every socket, and
+            # apply_move takes the same lock, so holding it across a send would
+            # turn one backpressured client into input lag for every player.
+            #
+            # The lock is not what makes the mutation above safe -- every engine
+            # method is synchronous, so on a single-threaded event loop it cannot
+            # interleave with anything (which is also why lobby.join/begin can
+            # mutate the engine without taking it). The lock is here for the tick
+            # loop, which mutates the engine from a background task.
+            if frames is not None:
+                await lobby.fanout(session, frames)
+                if became_final:
+                    await lobby.broadcast_lobby()
     except (WebSocketDisconnect, RuntimeError):
         pass
     finally:
         session.sockets.discard(entry)
-        # Let the other player see that their opponent dropped.
+        session.note_sockets_changed()
+        # Let the others see that someone dropped.
         with contextlib.suppress(Exception):
             await lobby.broadcast_state(session)
 

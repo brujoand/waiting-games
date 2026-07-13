@@ -1,20 +1,29 @@
-// Tic tac toe board renderer.
+// Tic-tac-toe.
 //
-// A game renderer gets the board element, the server's game state, the local
-// player, and a `send` callback. It owns nothing else.
+// The renderer contract: create() is called once when the game screen opens and
+// owns `root` until destroy(). update() runs on every state push. A DOM game
+// like this one rebuilds the board in update() and has nothing to tear down; a
+// canvas game paints from its own rAF loop and cleans it up in destroy().
 
-export function render(root, game, me, send) {
-  const myTurn = !game.over && game.turn === me.sub && game.status === "active";
-
+export function create({ root, me, send }) {
   root.className = "grid-3";
-  root.replaceChildren(
-    ...game.board.map((mark, cell) => {
-      const button = document.createElement("button");
-      button.className = "cell";
-      button.textContent = mark ?? "";
-      button.disabled = !myTurn || mark !== null;
-      button.onclick = () => send({ cell });
-      return button;
-    }),
-  );
+
+  return {
+    update(game) {
+      const mine = game.status === "active" && !game.over && game.turn === me.sub;
+
+      root.replaceChildren(
+        ...game.board.map((mark, cell) => {
+          const button = document.createElement("button");
+          button.className = "cell";
+          button.textContent = mark ?? "";
+          button.disabled = !mine || mark !== null;
+          button.onclick = () => send({ cell });
+          return button;
+        }),
+      );
+    },
+
+    destroy() {},
+  };
 }
