@@ -161,6 +161,37 @@ button:disabled {
   font-weight: 600;
 }
 
+.grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  max-width: 18rem;
+  margin-bottom: 1rem;
+}
+
+.cell {
+  aspect-ratio: 1;
+  font-size: 2.2rem;
+  font-weight: 600;
+  padding: 0;
+}
+
+.cell:disabled {
+  opacity: 1;
+}
+
+#toast {
+  position: fixed;
+  left: 50%;
+  bottom: 1.5rem;
+  transform: translateX(-50%);
+  background: var(--ink);
+  color: var(--bg);
+  padding: 0.6rem 1rem;
+  border-radius: 7px;
+  font-size: 0.9rem;
+}
+
 /* Confetti. Over everything, and deaf to the mouse: it is a decoration, and a
    decoration that can swallow a click is a bug. */
 .confetti {
@@ -202,37 +233,6 @@ button:disabled {
   .shaken {
     animation: none;
   }
-}
-
-.grid-3 {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 6px;
-  max-width: 18rem;
-  margin-bottom: 1rem;
-}
-
-.cell {
-  aspect-ratio: 1;
-  font-size: 2.2rem;
-  font-weight: 600;
-  padding: 0;
-}
-
-.cell:disabled {
-  opacity: 1;
-}
-
-#toast {
-  position: fixed;
-  left: 50%;
-  bottom: 1.5rem;
-  transform: translateX(-50%);
-  background: var(--ink);
-  color: var(--bg);
-  padding: 0.6rem 1rem;
-  border-radius: 7px;
-  font-size: 0.9rem;
 }
 
 /* -- Connect Four --------------------------------------------------------- */
