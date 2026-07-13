@@ -6,6 +6,7 @@
 
 import { t } from "../i18n.js";
 import { COLOURS, canvas, hint, keys, onChange, swipe } from "./_canvas.js";
+import { MAX_SPAN_MS, MIN_SPAN_MS, at, clamp } from "./_interpolate.js";
 
 // Swipe on a phone; the arrow keys (or WASD) on anything with them.
 const SWIPES = {
@@ -26,11 +27,35 @@ const ARROWS = {
   d: { dir: "right" },
 };
 
+// How long to assume a tick lasts before the server has told us. Replaced by its
+// own tickHz on the very first frame; this exists only so the first slide has
+// some duration at all.
+const ASSUMED_TICK_MS = 125;
+
 export function create({ root, me, send }) {
+  // Snake moves ONE WHOLE CELL per tick, at 8 Hz. Drawn at the cell it is on, it
+  // therefore teleports a full grid square eight times a second, and no amount of
+  // repainting at 60 fps helps: the thing being painted only changes 8 times a
+  // second. That is the choppiness, and it is not a dropped-frame problem -- it
+  // is what the game looks like when you draw it honestly.
+  //
+  // So draw it dishonestly, by exactly one tick. Keep the previous frame, and
+  // slide each segment from where it WAS to where it IS across the span between
+  // them. The rules do not change, the wire does not change; only the pixels
+  // between two states the server already agreed on.
+  let previous = null;
   let latest = null;
+  let arrived = 0;
+  let span = ASSUMED_TICK_MS;
 
   const board = canvas(root, (context, side) => {
-    if (latest) paint(context, side, latest, me);
+    if (!latest) return;
+
+    // Measured, not assumed. If a frame is dropped the gap doubles, and the snake
+    // glides two cells over 250ms instead of snapping two cells at once -- the
+    // failure degrades into slowness rather than into a jump.
+    const alpha = span > 0 ? Math.min((performance.now() - arrived) / span, 1) : 1;
+    paint(context, side, latest, previous, alpha, me);
   });
   hint(root, t("snake.hint"));
 
@@ -43,6 +68,22 @@ export function create({ root, me, send }) {
 
   return {
     update(game) {
+      const now = performance.now();
+
+      // Only a TICK advances the world. A state push that is not a tick -- someone
+      // connecting, someone dropping -- must not restart the slide, or the snake
+      // would visibly stutter every time a player opened the page.
+      const ticked = latest !== null && game.seconds !== latest.seconds;
+
+      if (ticked) {
+        span = clamp(now - arrived, MIN_SPAN_MS, MAX_SPAN_MS);
+        previous = latest;
+        arrived = now;
+      } else if (latest === null) {
+        span = game.tickHz ? 1000 / game.tickHz : ASSUMED_TICK_MS;
+        arrived = now;
+      }
+
       latest = game;
     },
     destroy() {
@@ -53,7 +94,7 @@ export function create({ root, me, send }) {
   };
 }
 
-function paint(context, side, game, me) {
+function paint(context, side, game, previous, alpha, me) {
   const cell = side / game.width;
 
   context.fillStyle = "rgba(127, 140, 160, 0.10)";
@@ -70,7 +111,12 @@ function paint(context, side, game, me) {
     context.fillStyle = COLOURS[seat % COLOURS.length];
     context.globalAlpha = snake.alive ? 1 : 0.25;
 
-    snake.cells.forEach(([x, y], index) => {
+    // A dead snake is not going anywhere. Sliding a corpse would be worse than
+    // leaving it where it fell -- and it fell exactly where the server says.
+    const before = snake.alive ? previous?.snakes?.[seat] : null;
+
+    snake.cells.forEach((_, index) => {
+      const [x, y] = at(snake, before, index, alpha);
       const inset = index === 0 ? 0 : cell * 0.08; // the head is a little bigger
       context.fillRect(
         x * cell + inset,
@@ -82,7 +128,7 @@ function paint(context, side, game, me) {
 
     // Ring your own head so you can find yourself in a six-snake scrum.
     if (snake.player === me.sub && snake.alive) {
-      const [hx, hy] = snake.cells[0];
+      const [hx, hy] = at(snake, before, 0, alpha);
       context.strokeStyle = "#fff";
       context.lineWidth = 2;
       context.strokeRect(hx * cell + 1, hy * cell + 1, cell - 2, cell - 2);
