@@ -142,41 +142,93 @@ button.danger:hover {
   color: #fff;
 }
 
+/* It must LOOK disabled, not merely be disabled. Filter the catalogue down to
+   nothing and Start has no game to start -- and a primary button in full colour that
+   does nothing when pressed reads as a broken page rather than an empty list. Until
+   the filters existed this state could not be reached, so nothing said so. */
 button:disabled {
   cursor: default;
+  opacity: 0.45;
 }
 
-/* Solo, or with other people. A segmented pair above the picker: the choice that
-   decides what the picker is even offering, so it reads before it, not beside it. */
-.modes {
+/* The filters, above the list they filter -- so you can see what a chip did. Each
+   row is one axis (who with, what kind); each chip is a toggle, off by default. */
+.filters {
   display: flex;
-  gap: 0;
-  margin-bottom: 0.75rem;
-  width: fit-content;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.4rem 0.75rem;
+  margin-bottom: 0.9rem;
 }
 
-.mode {
-  border-radius: 0;
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.chip {
+  border-radius: 999px;
   color: var(--muted);
-  font-size: 0.9rem;
-  padding: 0.35rem 0.9rem;
+  font-size: 0.85rem;
+  padding: 0.3rem 0.8rem;
 }
 
-.mode:first-child {
-  border-radius: 7px 0 0 7px;
-}
-
-.mode:last-child {
-  border-radius: 0 7px 7px 0;
-  border-left: 0;
-}
-
-.mode[data-on="true"] {
-  background: var(--panel);
+.chip[data-on="true"] {
+  background: color-mix(in srgb, var(--accent) 14%, var(--panel));
   border-color: var(--accent);
   color: var(--ink);
-  box-shadow: inset 0 -2px 0 var(--accent);
   font-weight: 600;
+}
+
+/* The catalogue. A list rather than a <select>: eleven games in a menu is eleven
+   games you cannot see, and the point of the filters is to watch this shorten. */
+.games {
+  list-style: none;
+  margin: 0 0 0.9rem;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(13rem, 1fr));
+  gap: 0.5rem;
+}
+
+/* Title and shelf on the first line, seats on their own underneath. NOT one flex
+   row: three things of unpredictable width in a narrow card is how "Dots and Boxes"
+   ends up hyphenated across two lines with its player count orphaned below it. */
+.game {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: baseline;
+  gap: 0.1rem 0.5rem;
+  width: 100%;
+  text-align: left;
+  padding: 0.6rem 0.8rem;
+  border-radius: 7px;
+}
+
+.game .meta {
+  grid-column: 1 / -1;
+  font-size: 0.8rem;
+}
+
+/* The chosen one. It is the game the Start button will start, so it has to be
+   obvious at a glance which that is -- there is no other clue. */
+.game[data-on="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  border-color: var(--accent);
+}
+
+/* Which shelf it came off. Quiet, and at the far end: it is how you learn what the
+   chips above mean, not something to read on every row. */
+.game .shelf {
+  /* Placed, not flowed: the seats span both columns, so auto-placement would push
+     this onto a third line of its own rather than up beside the title. */
+  grid-column: 2;
+  grid-row: 1;
+  color: var(--muted);
+  font-size: 0.75rem;
+  text-transform: lowercase;
+  white-space: nowrap;
 }
 
 .sessions {

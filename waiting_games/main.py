@@ -231,6 +231,9 @@ async def games() -> list[dict]:
             # is English, and the browser names the game from `key` in the
             # player's own language.
             "title": g.title,
+            # The shelf, not a word: the browser names it, exactly as it names the
+            # game. It is what the lobby's category filter is built out of.
+            "category": g.category,
             "minPlayers": g.min_players,
             "maxPlayers": g.max_players,
         }

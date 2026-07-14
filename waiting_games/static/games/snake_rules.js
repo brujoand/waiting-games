@@ -18,18 +18,17 @@
 // late, and no amount of interpolation, buffering or catching-up changes that. The
 // packet has to come out of the render loop.
 //
-// So it does. A SOLO game is deterministic -- one player, one input stream, and a
-// seed the server hands out (see _rng.js) -- which means the browser can simply
-// play it. Your turn lands on the next LOCAL tick. Nothing waits for the wire, and
-// the radio may sleep as long as it likes.
+// So it does. The game is deterministic -- one player, one input stream, and a seed
+// the server hands out (see _rng.js) -- which means the browser can simply play it.
+// Your turn lands on the next LOCAL tick. Nothing waits for the wire, and the radio
+// may sleep as long as it likes.
 //
 // This is not the client being trusted. It is the client being CHECKED: the run is
 // a pure function of (seed, moves, ticks), so the server replays it afterwards and
 // looks at the result itself. See snake.py's replay().
 //
-// Multiplayer keeps the server's clock, and should. The moment there is a second
-// snake there is something to arbitrate, and two browsers each certain they were
-// the one that survived is not a game, it is an argument.
+// There is never a second snake here -- Snake seats one, and a grid is why (see
+// snake.py). Snakes is the shared game, and it has its own rulebook.
 
 import { rng } from "./_rng.js";
 
@@ -88,20 +87,22 @@ export function game(seed, players) {
   }
 
   function start() {
-    for (let seat = 0; seat < players.length; seat += 1) {
-      const row = Math.floor(((seat + 1) * HEIGHT) / (players.length + 1));
-      const cells = [];
-      for (let i = 0; i < START_LENGTH; i += 1) cells.push([START_LENGTH - i, row]);
-      snakes.push({
-        cells,
-        heading: "right",
-        pending: "right",
-        growing: 0,
-        alive: true,
-        step: null,
-        player: players[seat],
-      });
-    }
+    // One snake, halfway down the board -- snake.py's _on_start, cell for cell. It
+    // is still a LIST of one: the wire shape is a list of snakes, and the renderer,
+    // the replay and the engine all read snakes[0].
+    const row = Math.floor(HEIGHT / 2);
+    const cells = [];
+    for (let i = 0; i < START_LENGTH; i += 1) cells.push([START_LENGTH - i, row]);
+    snakes.push({
+      cells,
+      heading: "right",
+      pending: "right",
+      growing: 0,
+      alive: true,
+      step: null,
+      player: players[0],
+    });
+
     apples = [];
     for (let i = 0; i < APPLES; i += 1) growAnApple();
     decide();
@@ -169,16 +170,8 @@ export function game(seed, players) {
     const doomed = new Set();
     for (const [snake, head] of heads) {
       const [x, y] = head;
-      if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) doomed.add(snake);
-      else if (bodies.has(key(head))) doomed.add(snake);
-      else {
-        for (const [other, theirs] of heads) {
-          if (other !== snake && theirs[0] === x && theirs[1] === y) {
-            doomed.add(snake);
-            doomed.add(other);
-          }
-        }
-      }
+      if (x < 0 || x >= WIDTH || y < 0 || y >= HEIGHT) doomed.add(snake); // the wall
+      else if (bodies.has(key(head))) doomed.add(snake); // itself
     }
 
     for (const snake of living) {
@@ -193,12 +186,7 @@ export function game(seed, players) {
   }
 
   function settle() {
-    const alive = snakes.filter((s) => s.alive);
-    if (players.length === 1) {
-      if (!alive.length) over = true;
-      return;
-    }
-    if (alive.length <= 1) over = true;
+    if (!snakes.some((s) => s.alive)) over = true;
   }
 
   return {

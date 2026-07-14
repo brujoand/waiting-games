@@ -27,6 +27,7 @@ DIRECTIONS = ("up", "down", "left", "right")
 class TwentyFortyEight(Game):
     key = "twentyfortyeight"
     title = "2048"
+    category = "arcade"
     min_players = 1
     max_players = 1
 

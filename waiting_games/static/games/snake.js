@@ -308,15 +308,13 @@ function paint(context, side, frame, me) {
 }
 
 export function outcome(game, me) {
-  // Solo has no winner to be. The run ends when you crash, and the engine reports
+  // Snake has no winner to be. The run ends when you crash, and the engine reports
   // that as a DRAW -- Result.draw() -- because there was nobody to beat. Which is
-  // correct on the wire and would be absurd in the room: the platform's rule
-  // would play a neutral, that-was-close chime at somebody who just died.
+  // correct on the wire and would be absurd in the room: the platform's rule would
+  // play a neutral, that-was-close chime at somebody who just died.
   //
-  // You crashed. It is a loss. Have the trombone.
-  if (game.snakes.length !== 1) return null; // a race: the platform is right
-
-  return game.snakes[0].player === me.sub ? "lose" : "none";
+  // You crashed. It is a loss. Have the trombone. A watcher gets neither.
+  return game.snakes[0]?.player === me.sub ? "lose" : "none";
 }
 
 export function describe(game, me) {
@@ -326,36 +324,23 @@ export function describe(game, me) {
   // for a game it does not understand.
   if (game.status === "waiting") return null;
 
+  // A spectator has no snake of their own -- any logged-in user may open a game
+  // socket and watch -- so nothing here may reach through `mine` without checking.
+  // Watching somebody else's run used to throw and blank the whole status line.
   const mine = game.snakes.find((snake) => snake.player === me.sub);
-  const solo = game.snakes.length === 1;
 
   if (game.over) {
-    // A spectator has no snake of their own, so nothing on this path may reach
-    // through `mine` without checking. Watching somebody else's solo run used to
-    // throw here and blank the whole status line.
-    if (solo) {
-      return mine
-        ? t("snake.solo_over", { seconds: game.seconds, length: mine.length })
-        : t("snake.solo_over_watched", { seconds: game.seconds });
-    }
-    if (game.draw) return t("snake.all_crashed");
-    return game.winner === me.sub
-      ? t("snake.you_survived", { length: mine.length })
-      : t("ui.they_won", { name: game.playerNames[game.winner] });
+    return mine
+      ? t("snake.solo_over", { seconds: game.seconds, length: mine.length })
+      : t("snake.solo_over_watched", { seconds: game.seconds });
   }
 
   // No clock on this line. The server streams `seconds` to one decimal place,
   // once per tick, and a status line that rewrites itself several times a second
   // is one nobody can actually read -- the digits just flicker. The elapsed time
-  // IS the score in solo, so it is reported once, when the run ends.
-  const you = mine
-    ? mine.alive
-      ? t("snake.length", { length: mine.length })
-      : t("snake.you_crashed")
-    : t("snake.watching");
-
-  if (solo) return you;
-
-  const alive = game.snakes.filter((snake) => snake.alive).length;
-  return t("snake.status", { you, alive });
+  // IS the score, so it is reported once, when the run ends.
+  if (!mine) return t("snake.watching");
+  return mine.alive
+    ? t("snake.length", { length: mine.length })
+    : t("snake.you_crashed");
 }

@@ -170,6 +170,7 @@ class SnakeBody:
 class Snakes(RealTimeGame):
     key = "snakes"
     title = "Snakes"
+    category = "arcade"
     min_players = 1
     max_players = 6
     tick_hz = TICK_HZ

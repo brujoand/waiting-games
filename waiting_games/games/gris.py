@@ -49,6 +49,7 @@ def deck_for(players: int) -> list[str]:
 class Gris(Game):
     key = "gris"
     title = "Gris"
+    category = "cards"
     # Two would work mechanically -- passing left is just swapping -- but it is not
     # this game: with one opponent there is nobody to out-notice, and the nose race
     # collapses into who clicks first.
