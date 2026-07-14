@@ -84,6 +84,7 @@ ON_FOUNDATION = "foundation"
 class Solitaire(Game):
     key = "solitaire"
     title = "Solitaire"
+    category = "cards"
     min_players = 1
     max_players = 1
 

@@ -28,6 +28,7 @@ CATEGORIES = ("cards", "board", "arcade")
 GAMES: dict[str, type[Game]] = {
     Gris.key: Gris,
     Idiot.key: Idiot,
+    Solitaire.key: Solitaire,
     TicTacToe.key: TicTacToe,
     ConnectFour.key: ConnectFour,
     Othello.key: Othello,
@@ -39,7 +40,6 @@ GAMES: dict[str, type[Game]] = {
     Snakes.key: Snakes,
     Pong.key: Pong,
     TwentyFortyEight.key: TwentyFortyEight,
-    Solitaire.key: Solitaire,
 }
 
 __all__ = ["CATEGORIES", "GAMES", "Game", "InvalidMove", "RealTimeGame", "Result"]
