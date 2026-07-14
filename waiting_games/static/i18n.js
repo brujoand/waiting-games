@@ -101,6 +101,7 @@ const en = {
   "game.snake.title": "Snake",
   "game.pong.title": "Pong",
   "game.twentyfortyeight.title": "2048",
+  "game.solitaire.title": "Solitaire",
 
   // -- a playing card, shared by every game that deals one (games/_cards.js)
   //
@@ -285,6 +286,27 @@ const en = {
   "twentyfortyeight.you_made_it": "You made {target}! Final score {score}.",
   "twentyfortyeight.stuck": "No moves left. Final score {score}.",
   "twentyfortyeight.run_over_watched": "The run ended on {score}.",
+
+  // Solitaire. The refusals name the RULE, never the card: a card is "TS" on the
+  // wire, and the ten being a T is a spelling the server chose for itself. The
+  // player can see which card they just dropped; what they cannot see is why it
+  // would not go there.
+  "solitaire.no_move": "Turn a card, or move one.",
+  "solitaire.nothing_to_draw": "There is nothing left to turn.",
+  "solitaire.no_such_card": "There is no such card.",
+  "solitaire.no_such_pile": "There is no such pile.",
+  "solitaire.card_is_face_down": "That card is face down.",
+  "solitaire.card_is_buried": "Only the top card of a pile is in play.",
+  "solitaire.needs_a_king": "Only a king may start an empty column.",
+  "solitaire.does_not_fit": "A column is built downwards, in alternating colours.",
+  "solitaire.out_of_sequence": "A foundation is built upwards from the ace, in suit.",
+  "solitaire.one_card_at_a_time": "Cards go home one at a time.",
+  "solitaire.hint": "Tap a card, then tap where it goes. Tap the stock to turn one.",
+  "solitaire.score": "{score} of {cards} home",
+  "solitaire.watching": "You are watching. {score} of {cards} home.",
+  "solitaire.you_won": "Every card home, in {moves} moves.",
+  "solitaire.stuck": "No moves left. {score} of {cards} home.",
+  "solitaire.run_over_watched": "The game ended with {score} of {cards} home.",
 };
 
 const nb = {
@@ -378,6 +400,7 @@ const nb = {
   "game.snake.title": "Slange",
   "game.pong.title": "Pong",
   "game.twentyfortyeight.title": "2048",
+  "game.solitaire.title": "Kabal",
 
   "tictactoe.cell_range": "Ruten må være 0-{max}.",
   "tictactoe.cell_taken": "Ruten er opptatt.",
@@ -552,6 +575,26 @@ const nb = {
   "twentyfortyeight.you_made_it": "Du klarte {target}! Sluttpoeng {score}.",
   "twentyfortyeight.stuck": "Ingen trekk igjen. Sluttpoeng {score}.",
   "twentyfortyeight.run_over_watched": "Forsøket endte på {score}.",
+
+  // Kabal. "Farge" er sorten -- kløver, ruter -- og fargene som veksler i en
+  // kolonne er rødt og svart. De to betyr ikke det samme, og en regel som sa
+  // "vekslende farger" ville si det motsatte av det den mener.
+  "solitaire.no_move": "Snu et kort, eller flytt et.",
+  "solitaire.nothing_to_draw": "Det er ikke mer å snu.",
+  "solitaire.no_such_card": "Det kortet finnes ikke.",
+  "solitaire.no_such_pile": "Den bunken finnes ikke.",
+  "solitaire.card_is_face_down": "Det kortet ligger med baksiden opp.",
+  "solitaire.card_is_buried": "Bare det øverste kortet i en bunke er i spill.",
+  "solitaire.needs_a_king": "Bare en konge kan starte en tom kolonne.",
+  "solitaire.does_not_fit": "En kolonne bygges nedover, vekselvis rødt og svart.",
+  "solitaire.out_of_sequence": "Ess-bunken bygges oppover fra esset, i samme farge.",
+  "solitaire.one_card_at_a_time": "Kortene går hjem ett om gangen.",
+  "solitaire.hint": "Trykk på et kort, og så på der det skal. Trykk på bunken for å snu.",
+  "solitaire.score": "{score} av {cards} hjemme",
+  "solitaire.watching": "Du ser på. {score} av {cards} hjemme.",
+  "solitaire.you_won": "Alle kortene hjemme, på {moves} trekk.",
+  "solitaire.stuck": "Ingen trekk igjen. {score} av {cards} hjemme.",
+  "solitaire.run_over_watched": "Spillet endte med {score} av {cards} hjemme.",
 };
 
 const DICTS = { en, nb };

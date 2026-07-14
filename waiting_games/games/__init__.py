@@ -12,6 +12,7 @@ from .othello import Othello
 from .pong import Pong
 from .snake import Snake
 from .snakes import Snakes
+from .solitaire import Solitaire
 from .tictactoe import TicTacToe
 from .twentyfortyeight import TwentyFortyEight
 
@@ -29,6 +30,7 @@ GAMES: dict[str, type[Game]] = {
     Snakes.key: Snakes,
     Pong.key: Pong,
     TwentyFortyEight.key: TwentyFortyEight,
+    Solitaire.key: Solitaire,
 }
 
 __all__ = ["GAMES", "Game", "InvalidMove", "RealTimeGame", "Result"]

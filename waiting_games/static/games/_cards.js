@@ -1,9 +1,10 @@
 // A playing card, drawn once for every game that deals one.
 //
-// A card is two characters on the wire -- "TH", "AS" -- and both card games speak
-// it (games/gris.py, games/idiot.py). The rank is a TRANSLATION KEY rather than
-// the letter itself, because a Norwegian jack is a Kn and a Norwegian ace is an E;
-// the suit is a pip, which is the same in every language there is.
+// A card is two characters on the wire -- "TH", "AS" -- and all three card games
+// speak it (games/gris.py, games/idiot.py, games/solitaire.py). The rank is a
+// TRANSLATION KEY rather than the letter itself, because a Norwegian jack is a Kn
+// and a Norwegian ace is an E; the suit is a pip, which is the same in every
+// language there is.
 //
 // This module exists because Idiot was the second game to need it. Two card games
 // with two rank alphabets is two rank alphabets, and the one nobody is looking at
@@ -11,7 +12,10 @@
 
 import { t } from "../i18n.js";
 
-const PIPS = { S: "♠", H: "♥", D: "♦", C: "♣" };
+// Exported because Solitaire draws a card-shaped HOLE: an empty foundation, with the
+// pip of the suit still missing from it ghosted in the middle. It is the only place a
+// pip appears with no card under it.
+export const PIPS = { S: "♠", H: "♥", D: "♦", C: "♣" };
 
 export function rankOf(code) {
   return code[0];
