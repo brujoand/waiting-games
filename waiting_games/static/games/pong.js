@@ -83,42 +83,94 @@ function paint(context, side, game, me) {
 
   // A wall nobody defends is solid, and the ball comes back off it. Draw it, or
   // it looks like a bug.
+  //
+  // Thinner than a paddle, and that is not a style choice: the ball turns around
+  // AT a bare wall and at the FACE of a paddle, so a wall drawn as thick as a
+  // paddle would be claiming a slab of board that nothing bounces off.
   context.fillStyle = "rgba(127, 140, 160, 0.5)";
-  const thick = side * 0.02;
+  const wallThick = side * 0.02;
   for (const wall of game.solid) {
-    if (wall === "left") context.fillRect(0, 0, thick, side);
-    if (wall === "right") context.fillRect(side - thick, 0, thick, side);
-    if (wall === "top") context.fillRect(0, 0, side, thick);
-    if (wall === "bottom") context.fillRect(0, side - thick, side, thick);
+    if (wall === "left") context.fillRect(0, 0, wallThick, side);
+    if (wall === "right") context.fillRect(side - wallThick, 0, wallThick, side);
+    if (wall === "top") context.fillRect(0, 0, side, wallThick);
+    if (wall === "bottom") context.fillRect(0, side - wallThick, side, wallThick);
   }
 
-  // Paddles sit ON their wall, because that is exactly where the server bounces
-  // the ball off them. Drawing them inset would look tidier and would be a lie:
-  // the ball would visibly turn around in the gap and never touch the paddle.
+  // Paddles sit ON their wall, and they are exactly as thick as the server says
+  // they are -- `paddleThick` is the slab the ball really turns around at, not a
+  // decoration. Drawing them any other size would be a lie about where contact
+  // happens, and the ball is big enough now that you would see it.
   game.paddles.forEach((paddle, seat) => {
     if (paddle.out) return;
 
-    context.fillStyle = COLOURS[seat % COLOURS.length];
-    const length = game.paddleHalf * 2 * side;
-    const along = paddle.position * side;
+    const [x, y, w, h] = slab(paddle, game.paddleHalf, game.paddleThick, side);
+    const colour = COLOURS[seat % COLOURS.length];
 
-    if (paddle.wall === "left") {
-      context.fillRect(0, along - length / 2, thick, length);
-    } else if (paddle.wall === "right") {
-      context.fillRect(side - thick, along - length / 2, thick, length);
-    } else if (paddle.wall === "top") {
-      context.fillRect(along - length / 2, 0, length, thick);
-    } else {
-      context.fillRect(along - length / 2, side - thick, length, thick);
+    // Held: the paddle glows while its player is leaning on the controls.
+    //
+    // On a phone you steer by holding a HALF OF THE BOARD -- your finger is
+    // nowhere near the paddle -- so without this there is nothing on screen that
+    // says the press landed. A paddle already jammed against the end of its wall
+    // makes it worse: it is being held, it cannot move, and a board that shows
+    // nothing at all looks like one that has stopped listening.
+    //
+    // A halo in the paddle's OWN colour, and not the obvious lighter fill. This
+    // board has a light theme and a dark one, and white-over-colour brightens on
+    // one and washes out on the other -- on the light theme a held paddle went
+    // PALER than an idle one, which is exactly backwards for "the game can hear
+    // you". A glow grows the paddle's presence on either.
+    context.save();
+    if (paddle.held) {
+      context.shadowColor = colour;
+      context.shadowBlur = Math.min(w, h) * 1.4; // the slab's thickness, softened
     }
+    context.fillStyle = colour;
+    context.fillRect(x, y, w, h);
+    if (paddle.held) context.fillRect(x, y, w, h); // twice: one pass is a rumour
+    context.restore();
   });
 
-  const [bx, by] = game.ball;
-  context.fillStyle = "#e8eaed";
-  context.beginPath();
-  context.arc(bx * side, by * side, game.radius * side, 0, Math.PI * 2);
-  context.fill();
+  ball(context, side, game);
 
+  context.restore();
+}
+
+// Where a paddle's slab lies, in screen pixels, on whichever wall it defends.
+//
+// One table rather than four fill calls: the paddle is drawn twice (colour, then
+// the held highlight over it), and two copies of the same if-chain is exactly how
+// a highlight ends up half a pixel off the thing it is highlighting.
+function slab(paddle, half, deep, side) {
+  const length = half * 2 * side;
+  const thick = deep * side;
+  const start = paddle.position * side - length / 2;
+
+  if (paddle.wall === "left") return [0, start, thick, length];
+  if (paddle.wall === "right") return [side - thick, start, thick, length];
+  if (paddle.wall === "top") return [start, 0, length, thick];
+  return [start, side - thick, length, thick];
+}
+
+function ball(context, side, game) {
+  const [bx, by] = game.ball;
+  const radius = game.radius * side;
+
+  // A glow, and then the ball on top of it. The ball is the one thing on this
+  // board you have to track, it is the smallest thing on it, and it was a flat
+  // near-white circle on a near-white board -- players simply lost it. The halo
+  // is what makes it findable in peripheral vision, which is where you are
+  // actually looking while your hands are busy with the paddle.
+  context.save();
+  context.shadowColor = "rgba(255, 209, 102, 0.95)";
+  context.shadowBlur = radius * 1.8;
+  context.fillStyle = "#ffd166";
+
+  context.beginPath();
+  context.arc(bx * side, by * side, radius, 0, Math.PI * 2);
+  // Twice: a single pass lays down one faint blur, and the point of the halo is
+  // to be seen without being looked at.
+  context.fill();
+  context.fill();
   context.restore();
 }
 

@@ -22,13 +22,28 @@ from .base import InvalidMove, RealTimeGame, Result
 WALLS = ("left", "right", "top", "bottom")
 LIVES = 3
 
-BALL_RADIUS = 0.015
+BALL_RADIUS = 0.024
 BALL_SPEED = 0.45  # units per second
 SPEED_UP = 1.03  # each paddle hit makes it a little nastier
 MAX_SPEED = 1.1
 
-PADDLE_HALF = 0.09  # half the paddle's length
+PADDLE_HALF = 0.12  # half the paddle's length, along its wall
 PADDLE_SPEED = 0.85  # units per second
+
+# How far the paddle stands out from its wall -- and this is REAL, not a drawing
+# trick: the ball turns around at the paddle's face, not at the wall behind it.
+#
+# The renderer used to draw a 2%-thick paddle over a collision that happened at
+# the wall, so at the moment of contact the ball was already a third of the way
+# through the bat. Making the paddle bigger without making it real would only
+# have made that worse. A thickness the physics agrees with is the same amount of
+# code and it cannot drift apart.
+#
+# The face is therefore also the goal line: get past it and the point is gone,
+# which is what a paddle IS. The ball no longer flies the last 3% to the wall to
+# be judged there, and nothing about that is visible except that the miss reads
+# as "you were beaten" rather than "the wall ate it".
+PADDLE_THICK = 0.03
 
 
 class Paddle:
@@ -116,28 +131,35 @@ class Pong(RealTimeGame):
                 return paddle
         return None
 
+    def _face(self, wall: str) -> float:
+        """How far in from `wall` the ball turns around.
+
+        A defended wall has a paddle standing on it, and the ball meets the front
+        of the paddle. An undefended one is bare, and the ball meets the wall.
+        """
+        stand = PADDLE_THICK if self._defender(wall) is not None else 0.0
+        return stand + BALL_RADIUS
+
     def _walls(self) -> None:
         # Every wall the ball is past, not just the first. In a corner it is past
         # TWO of them at once, and handling only one would leave it hanging
         # outside the box on the other axis until the next tick.
         for wall, axis in (("left", 0), ("right", 0), ("top", 1), ("bottom", 1)):
-            x, y = self.ball
-            beyond = {
-                "left": x < BALL_RADIUS,
-                "right": x > 1 - BALL_RADIUS,
-                "top": y < BALL_RADIUS,
-                "bottom": y > 1 - BALL_RADIUS,
-            }[wall]
+            near = wall in ("left", "top")  # the low end of this axis
+            face = self._face(wall)
+
+            position = self.ball[axis]
+            beyond = position < face if near else position > 1 - face
             if not beyond:
                 continue
 
-            # Where along the wall the ball crossed it.
-            coordinate = y if axis == 0 else x
+            # Where ALONG the wall the ball is: the other axis of the two.
+            coordinate = self.ball[1 - axis]
             defender = self._defender(wall)
 
             # Nobody's wall, or a wall whose player is out: it is just a wall.
             if defender is None:
-                self._bounce(axis, wall)
+                self._bounce(axis, near, face)
                 continue
 
             if abs(coordinate - defender.position) <= PADDLE_HALF + BALL_RADIUS:
@@ -145,24 +167,22 @@ class Pong(RealTimeGame):
                 # catch the ball, the more angle you put on it.
                 offset = (coordinate - defender.position) / PADDLE_HALF
                 self.velocity[1 - axis] += offset * 0.35 * BALL_SPEED
-                self._bounce(axis, wall)
+                self._bounce(axis, near, face)
                 self.rally += 1
                 self._speed_up()
                 continue
 
-            # Missed. The ball is gone; nothing else about this tick matters.
+            # Past the face, and not on the paddle: it went by. The paddle is the
+            # goal line, so there is nothing behind it left to hit.
             defender.lives -= 1
             self._serve()
             return
 
-    def _bounce(self, axis: int, wall: str) -> None:
+    def _bounce(self, axis: int, near: bool, face: float) -> None:
         self.velocity[axis] = -self.velocity[axis]
-        # Put it back inside the box, or a slow ball can stick to the wall and
-        # flip its velocity every tick.
-        if wall in ("left", "top"):
-            self.ball[axis] = BALL_RADIUS
-        else:
-            self.ball[axis] = 1 - BALL_RADIUS
+        # Put it back on the face, or a slow ball can sink into the paddle and
+        # flip its velocity every tick without ever getting out.
+        self.ball[axis] = face if near else 1 - face
 
     def _speed_up(self) -> None:
         speed = math.hypot(self.velocity[0], self.velocity[1])
@@ -186,6 +206,7 @@ class Pong(RealTimeGame):
             "ball": [round(self.ball[0], 4), round(self.ball[1], 4)],
             "radius": BALL_RADIUS,
             "paddleHalf": PADDLE_HALF,
+            "paddleThick": PADDLE_THICK,
             "rally": self.rally,
             "paddles": [
                 {
@@ -194,6 +215,18 @@ class Pong(RealTimeGame):
                     "position": round(paddle.position, 4),
                     "lives": max(0, paddle.lives),
                     "out": paddle.out,
+                    # Whether this player is leaning on the controls right now.
+                    # It is the DRIFT, not the movement: a paddle held against the
+                    # end of its wall has stopped moving and is still being held,
+                    # and those are the moments a player most needs telling that
+                    # the game can hear them.
+                    #
+                    # Sent for every paddle rather than kept on the client that
+                    # pressed the key, because it is worth seeing your opponent
+                    # commit to a direction -- and because the client would
+                    # otherwise be keeping its own copy of a thing the server
+                    # already knows, free to disagree with it.
+                    "held": paddle.drift != 0,
                 }
                 for seat, paddle in enumerate(self.paddles)
             ],
