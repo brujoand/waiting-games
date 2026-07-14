@@ -486,4 +486,38 @@ async def index() -> FileResponse:
     return FileResponse(STATIC / "index.html")
 
 
-app.mount("/static", StaticFiles(directory=STATIC), name="static")
+class Revalidating(StaticFiles):
+    """Static files a browser must ASK about before it reuses them.
+
+    There is no build step here and no hashed filenames, so `/static/games/snake.js`
+    is the same URL for ever. StaticFiles sends an ETag and a Last-Modified and no
+    Cache-Control at all -- and with no Cache-Control a browser is free to GUESS how
+    long a file stays good, which it does: it will serve a cached copy without
+    asking, for a fraction of the file's age.
+
+    It guesses per file. Which means a browser can end up running a MIXTURE of two
+    deploys -- this morning's app.js against last week's snake.js -- and the result
+    is not an error. It is a game that behaves impossibly.
+
+    That already happened, and it cost a day. Solo Snake moved into the browser and
+    the server stopped ticking solo games (see RealTimeGame.client_clock); a phone
+    holding a cached copy of the OLD renderer then sat waiting for a stream of
+    states that was never coming. Blank board. Leave, come back, and it takes the
+    single state sent on connect, draws it once, and freezes -- a static snake,
+    static apples, nothing moving, nothing thrown, nothing logged. Undebuggable,
+    because nothing is wrong with any of the code that is running. It is simply not
+    the code that was written.
+
+    `no-cache` does not mean "do not store this". It means "do not use it without
+    asking". The ETag is still there, so the answer is nearly always a 304 with no
+    body: one round trip, and nothing else. That is a fair price for never again
+    shipping half an app to somebody's phone.
+    """
+
+    async def get_response(self, path: str, scope):
+        response = await super().get_response(path, scope)
+        response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.mount("/static", Revalidating(directory=STATIC), name="static")
