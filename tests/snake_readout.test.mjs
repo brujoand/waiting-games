@@ -9,19 +9,36 @@ import { test } from "node:test";
 // A DOM small enough for _debug.js, and a clock we control -- the readout's
 // stopwatch runs on performance.now(), so a test that cannot move it cannot test
 // the one thing most worth testing.
-let panel = null;
+let made = [];
 let clock = 0;
+
+const element = () => ({
+  className: "",
+  type: "",
+  textContent: "",
+  style: {},
+  append() {},
+  remove() {},
+  setAttribute() {},
+  addEventListener() {},
+  select() {},
+});
 
 globalThis.performance = { now: () => clock };
 globalThis.document = {
   createElement() {
-    panel = { className: "", textContent: "", append() {}, remove() {} };
-    return panel;
+    const node = element();
+    made.push(node);
+    return node;
   },
 };
 
+// The readout writes its live figures into the <pre>, which is the second thing it
+// makes: the box, then the panel, then the button.
+const shown = () => made[1].textContent;
 const root = { append() {} };
 const debugging = (on) => {
+  made = [];
   globalThis.location = { search: on ? "?debug" : "" };
 };
 
@@ -71,13 +88,13 @@ test("key -> turn is the time from the keypress to the head changing axis", () =
   ({ head, at } = slide(meter, head, 6, "x", at));
   ({ head, at } = slide(meter, head, 20, "y", at));
 
-  const shown = panel.textContent;
-  const measured = Number(/key -> turn\s+(\d+)ms/.exec(shown)[1]);
+  const text = shown();
+  const measured = Number(/key -> turn\s+(\d+)ms/.exec(text)[1]);
   const expected = 7 * FRAME; // the 6 straight frames, plus the one that turned
 
   assert.ok(
     Math.abs(measured - expected) < FRAME,
-    `reported ${measured}ms for a turn that took ${expected.toFixed(0)}ms:\n${shown}`,
+    `reported ${measured}ms for a turn that took ${expected.toFixed(0)}ms:\n${text}`,
   );
 });
 
@@ -99,11 +116,48 @@ test("hammering the keys does not restart the stopwatch", () => {
   ({ head, at } = slide(meter, head, 5, "x", at));
   ({ head, at } = slide(meter, head, 20, "y", at));
 
-  const measured = Number(/key -> turn\s+(\d+)ms/.exec(panel.textContent)[1]);
+  const measured = Number(/key -> turn\s+(\d+)ms/.exec(shown())[1]);
   assert.ok(
     measured >= 10 * FRAME,
     `the second press reset the clock: reported ${measured}ms, but the player has ` +
       `been waiting since ${(at - first).toFixed(0)}ms ago`,
+  );
+});
+
+test("a press nothing answered is COUNTED, not averaged into the latency", () => {
+  // THE BUG THIS READOUT SHIPPED WITH, and it made the game look half a tick worse
+  // than it is. A press the server threw away -- you tried to reverse into your own
+  // neck -- never produces a turn, so the stopwatch ran on until the NEXT real turn
+  // and reported that whole wait as if it were this press's latency. One poisoned
+  // sample in an eight-sample mean is all it takes: seven honest 100ms turns and one
+  // 600ms phantom average out to 162ms, and 162ms is a whole tick, and a whole tick
+  // is exactly the bug we had just spent a day removing. The instrument accused the
+  // code of the crime it had itself committed.
+  //
+  // A press with no answer has no latency. It has to be counted, not averaged.
+  debugging(true);
+  const meter = readout(root);
+
+  let { head, at } = slide(meter, [5, 5], 20, "x", 0);
+
+  // An honest turn: pressed, answered six frames later.
+  clock = at;
+  meter.pressed();
+  ({ head, at } = slide(meter, head, 6, "x", at));
+  ({ head, at } = slide(meter, head, 10, "y", at));
+
+  // Now one the server threw away. No turn EVER comes: the snake carries on down.
+  clock = at;
+  meter.pressed();
+  ({ head, at } = slide(meter, head, 60, "y", at)); // a full second of no answer
+
+  const text = shown();
+  assert.match(text, /ignored 1/, `the dropped press was not counted:\n${text}`);
+
+  const mean = Number(/mean (\d+)ms/.exec(text)[1]);
+  assert.ok(
+    mean < 3 * FRAME + 8 * FRAME,
+    `the phantom poisoned the mean: ${mean}ms, off one honest ~117ms turn:\n${text}`,
   );
 });
 
@@ -130,6 +184,6 @@ test("a stalled paint loop shows up as the worst frame, not as an average", () =
   });
   slide(meter, head, 12, "x", at);
 
-  const worst = Number(/worst frame (\d+)ms/.exec(panel.textContent)[1]);
+  const worst = Number(/worst frame (\d+)ms/.exec(shown())[1]);
   assert.ok(worst >= 100, `a 100ms stall was reported as ${worst}ms`);
 });

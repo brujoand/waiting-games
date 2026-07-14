@@ -1,8 +1,8 @@
 // A readout, for when "it feels choppy" has to become a number.
 //
 // Off unless the page is loaded with ?debug. It is not a developer toy: it exists
-// because the three things that make a real-time game feel bad are indistinguish-
-// able from the sofa, and they have nothing to do with each other.
+// because the things that make a real-time game feel bad are indistinguishable
+// from the sofa, and they have nothing to do with each other.
 //
 //   The BROWSER stopped painting.  60fps is the budget the whole design rests on,
 //   and a tab that drops to 30, or hitches for 100ms, looks exactly like a network
@@ -18,7 +18,13 @@
 //   per tick, straight off the cells being painted. It should be 1.00 and it should
 //   never spike: a spike IS the stutter, measured rather than described.
 //
-// And `key -> turn` is the one number for the other complaint. It times an actual
+//   The INPUT never landed.  A press the server rejected (you tried to reverse) or
+//   never got produces no turn at all, and the player reads that as lag. `ignored`
+//   counts them. It must never be folded into the average instead -- a press with
+//   no answer has no latency, and averaging it in reports a number that belongs to
+//   nothing that happened.
+//
+// And `key -> turn` is the number for the other complaint. It times an actual
 // keypress against the frame the head actually changed axis on -- so "control feels
 // delayed" stops being a feeling and becomes a millisecond count that can be argued
 // with. On a healthy 6 Hz line it should sit near half a tick, because a snake
@@ -29,7 +35,12 @@
 // is there to hunt.
 
 const REPORT_MS = 200;
-const WINDOW_MS = 1000; // how much history each figure is drawn from
+const WINDOW_MS = 1000; // how much history the live figures are drawn from
+
+// A press with no turn behind it after this long was not slow, it was DROPPED --
+// the server rejected it, or never saw it. Three ticks is well past the tick that
+// should have answered it, and well short of an ordinary gap between presses.
+const GIVE_UP_TICKS = 3;
 
 export function enabled() {
   return new URLSearchParams(location.search).has("debug");
@@ -40,7 +51,9 @@ export function enabled() {
  * every call site is a `?.` and the game pays nothing for it being here.
  *
  * frame({now, delayMs, path, head, tickMs, dropped, stateAge}) -- once per paint.
- * pressed() -- the player asked to turn. Starts the key -> turn stopwatch.
+ * pressed() -- a steering message actually WENT. Starts the key -> turn stopwatch.
+ *              Do not call it for a press onChange() deduped away: nothing is
+ *              coming back to answer it, so there is nothing to time.
  *
  * ONE CLOCK: `now` must be performance.now(), because that is what pressed() reads
  * when it starts the stopwatch. Hand frame() a different origin and key -> turn
@@ -50,23 +63,121 @@ export function enabled() {
 export function readout(root) {
   if (!enabled()) return null;
 
-  const element = document.createElement("pre");
-  element.className = "readout";
-  root.append(element);
+  const box = document.createElement("div");
+  box.className = "readout";
 
-  const paints = []; // {at} of every frame in the window
-  const moves = []; // {at, speed} of the drawn snake
-  const turns = []; // key -> turn, in ms
+  const panel = document.createElement("pre");
+  const copy = document.createElement("button");
+  copy.type = "button";
+  copy.className = "readout-copy";
+  copy.textContent = "Copy report";
+  box.append(panel, copy);
+  root.append(box);
 
-  let waitingFor = null; // a press we have not yet seen answered on screen
+  const paints = []; // every frame in the live window
+  const moves = []; // the drawn snake's speed, in the live window
+  const turns = []; // key -> turn, in ms, every one of them
+
+  // The live figures are a one-second window, because that is what you watch while
+  // you play. The report is the WHOLE session, because the thing you are hunting
+  // probably happened thirty seconds ago and is not on screen any more.
+  const all = { frames: 0, worstGap: 0, worstSpeed: 0, ahead: 0, behind: 0 };
+  let worstDelay = 0;
+  let ignored = 0;
+
+  let waitingFor = null;
   let axis = null;
   let previous = null;
   let reportedAt = 0;
+  let latest = null;
 
   const since = (list, now) => {
     while (list.length && now - list[0].at > WINDOW_MS) list.shift();
     return list;
   };
+  const median = (xs) =>
+    xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : 0;
+
+  // The report is the thing worth having, and copying it is the thing that has to
+  // work -- including on http://some-box:8080, where navigator.clipboard does not
+  // exist at all. A page served over plain http is not a secure context, so the
+  // Clipboard API is simply absent, and a copy button that only knows about it is
+  // a copy button that silently does nothing on exactly the machine you are
+  // debugging. Hence the execCommand fallback, deprecated and still the only thing
+  // that works here, and hence selecting the text as a last resort so Ctrl-C can.
+  async function toClipboard(text) {
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return "Copied";
+      }
+    } catch {
+      // fall through: permissions, or an insecure context that lies about having it
+    }
+
+    const scratch = document.createElement("textarea");
+    scratch.value = text;
+    scratch.setAttribute("readonly", "");
+    scratch.style.position = "fixed";
+    scratch.style.opacity = "0";
+    document.body.append(scratch);
+    scratch.select();
+    try {
+      const ok = document.execCommand("copy");
+      scratch.remove();
+      if (ok) return "Copied";
+    } catch {
+      scratch.remove();
+    }
+
+    // Nothing worked. Leave it selected on screen so the keyboard can do it.
+    const range = document.createRange();
+    range.selectNodeContents(panel);
+    const selection = window.getSelection();
+    selection.removeAllRanges();
+    selection.addRange(range);
+    return "Selected -- press Ctrl-C";
+  }
+
+  function report() {
+    const answered = turns.length;
+    const lines = [
+      `waiting-games snake ?debug`,
+      ``,
+      `tick rate     ${latest ? (1000 / latest.tickMs).toFixed(1) : "?"} Hz` +
+        ` (${latest ? latest.tickMs.toFixed(0) : "?"}ms)`,
+      `session       ${(all.frames / 60).toFixed(0)}s, ${all.frames} frames painted`,
+      ``,
+      `-- the browser`,
+      `worst frame   ${all.worstGap.toFixed(0)}ms   (60fps budget is 17ms)`,
+      ``,
+      `-- the wire`,
+      `dropped       ${latest?.dropped ?? 0} states`,
+      `drawn         live ${all.ahead} frames / catching up ${all.behind} frames`,
+      `delay         worst ${worstDelay.toFixed(0)}ms`,
+      ``,
+      `-- the arithmetic`,
+      `speed         worst ${all.worstSpeed.toFixed(2)} cells/tick (1.00 is correct)`,
+      ``,
+      `-- the input`,
+      `key -> turn   ${answered} answered: ` +
+        (answered ? turns.map((t) => `${t.toFixed(0)}ms`).join(" ") : "none"),
+      `              mean ${answered ? Math.round(turns.reduce((a, b) => a + b, 0) / answered) : "-"}ms` +
+        `, median ${answered ? median(turns).toFixed(0) : "-"}ms`,
+      `ignored       ${ignored} presses got no turn at all`,
+      ``,
+      `screen        ${window.devicePixelRatio}x, ${window.innerWidth}x${window.innerHeight}`,
+      `agent         ${navigator.userAgent}`,
+    ];
+    return lines.join("\n");
+  }
+
+  copy.addEventListener("click", async () => {
+    copy.textContent = await toClipboard(report());
+    setTimeout(() => {
+      copy.textContent = "Copy report";
+    }, 2000);
+  });
 
   return {
     pressed() {
@@ -76,31 +187,49 @@ export function readout(root) {
     },
 
     frame({ now, delayMs, path, head, tickMs, dropped, stateAge }) {
+      latest = { tickMs, dropped, stateAge };
       paints.push({ at: now });
 
+      all.frames += 1;
+      if (path === "live") all.ahead += 1;
+      else all.behind += 1;
+      worstDelay = Math.max(worstDelay, delayMs);
+
+      // A press nothing ever answered. It was not slow -- it never landed, and
+      // folding it into the average would report a wait that belongs to no press
+      // at all. Count it instead: input being thrown away is its own bug, and it
+      // is the one that feels most like lag.
+      if (waitingFor !== null && now - waitingFor > GIVE_UP_TICKS * tickMs) {
+        ignored += 1;
+        waitingFor = null;
+      }
+
       if (previous) {
-        const dx = head[0] - previous[0];
-        const dy = head[1] - previous[1];
+        const dx = head[0] - previous.x;
+        const dy = head[1] - previous.y;
         const gap = now - previous.at;
+
+        all.worstGap = Math.max(all.worstGap, gap);
 
         if (gap > 0) {
           // Cells per tick: 1.00 is correct, whatever the tick rate is.
-          moves.push({ at: now, speed: (Math.hypot(dx, dy) / gap) * tickMs });
+          const speed = (Math.hypot(dx, dy) / gap) * tickMs;
+          moves.push({ at: now, speed });
+          all.worstSpeed = Math.max(all.worstSpeed, speed);
         }
 
         // The turn has landed on screen the moment the head starts moving on the
         // other axis. That is what the player is actually waiting to see.
-        const moving = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
         if (Math.hypot(dx, dy) > 1e-9) {
+          const moving = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
           if (axis !== null && moving !== axis && waitingFor !== null) {
             turns.push(now - waitingFor);
-            if (turns.length > 8) turns.shift();
             waitingFor = null;
           }
           axis = moving;
         }
       }
-      previous = { 0: head[0], 1: head[1], at: now };
+      previous = { x: head[0], y: head[1], at: now };
 
       if (now - reportedAt < REPORT_MS) return;
       reportedAt = now;
@@ -116,26 +245,22 @@ export function readout(root) {
       }
 
       const fps = frames.length / (WINDOW_MS / 1000);
-      const worstSpeed = speeds.length ? Math.max(...speeds) : 0;
-      const median = speeds.length
-        ? [...speeds].sort((a, b) => a - b)[Math.floor(speeds.length / 2)]
-        : 0;
-      const turn = turns.length ? turns[turns.length - 1] : null;
-      const typical = turns.length
-        ? Math.round(turns.reduce((a, b) => a + b, 0) / turns.length)
+      const recent = turns.slice(-8);
+      const mean = recent.length
+        ? Math.round(recent.reduce((a, b) => a + b, 0) / recent.length)
         : null;
 
-      element.textContent = [
+      panel.textContent = [
         `fps         ${fps.toFixed(0).padStart(5)}   worst frame ${worstGap.toFixed(0)}ms`,
-        `speed       ${median.toFixed(2).padStart(5)}   worst ${worstSpeed.toFixed(2)} cells/tick`,
+        `speed       ${median(speeds).toFixed(2).padStart(5)}   worst ${Math.max(0, ...speeds).toFixed(2)} cells/tick`,
         `states/s    ${(1000 / tickMs).toFixed(1).padStart(5)}   dropped ${dropped}   age ${(stateAge ?? 0).toFixed(0)}ms`,
         `delay       ${delayMs.toFixed(0).padStart(5)}ms  drawn ${path}`,
-        `key -> turn ${turn === null ? "    -" : `${turn.toFixed(0).padStart(5)}`}ms  mean ${typical ?? "-"}ms`,
+        `key -> turn ${recent.length ? `${recent[recent.length - 1].toFixed(0)}`.padStart(5) : "    -"}ms  mean ${mean ?? "-"}ms  ignored ${ignored}`,
       ].join("\n");
     },
 
     destroy() {
-      element.remove();
+      box.remove();
     },
   };
 }

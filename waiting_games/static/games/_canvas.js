@@ -87,14 +87,21 @@ export function hint(root, text) {
 //
 // `onRelease` is for a game where letting go MEANS something: Pong's paddle
 // stops. Snake keeps its heading, so it passes nothing.
+//
+// It reports whether the intent actually WENT. Nearly every caller ignores that,
+// and should. The ?debug readout does not: it times a keypress against the turn
+// that answers it, and a press swallowed here has no answer coming -- so timing
+// one charges the game for input it was never sent, and the figure it reports is
+// really the wait for somebody else's press.
 export function onChange(send) {
   let last = null;
 
   return (intent) => {
     const encoded = JSON.stringify(intent);
-    if (encoded === last) return; // the server already knows
+    if (encoded === last) return false; // the server already knows
     last = encoded;
     send(intent);
+    return true;
   };
 }
 
