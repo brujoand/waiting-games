@@ -75,6 +75,19 @@ Two things to get right:
 - **Hidden information lives in `view(seat)`**, and the spectator view
   (`seat is None`) must be the MOST restricted one — any logged-in user may open
   a game socket and watch. Battleship and Hangman are the worked examples.
+- **A secret can belong to NOBODY.** Solitaire's face-down cards are hidden from
+  the only person playing, so there is no `view()` override at all: the strict
+  view is the only view, and `public_state()` counts the cards it may not name.
+  That is the safe way round, and it is why the stock is a NUMBER on the wire —
+  send the list and the browser knows what is coming, which is not a thing a
+  player can un-know.
+- **Solitaire deals ONE card, not three, and that is not softness.** Turning one
+  at a time makes every card in the stock reachable, which is what turns "there
+  is no move left" into arithmetic (`_stuck()`) instead of a judgement. Deal
+  three and two cards in every three are unreachable this pass and reachable the
+  next — a dead board becomes an opinion, and the honest answer becomes "we
+  cannot say". A dead end also says only *there is nothing left to do*, never
+  *you cannot win*: one of those is checkable and the other is a guess.
 - **A real-time game** subclasses `RealTimeGame` and sets `tick_hz`. A move is
   then *intent*: `tick()` decides what actually happens and when the game ends,
   and the tick loop — not the move handler — broadcasts. Don't echo real-time
