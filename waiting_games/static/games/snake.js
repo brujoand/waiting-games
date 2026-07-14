@@ -6,6 +6,7 @@
 
 import { t } from "../i18n.js";
 import { COLOURS, canvas, hint, keys, onChange, swipe } from "./_canvas.js";
+import { readout } from "./_debug.js";
 import { ahead, at, timeline } from "./_interpolate.js";
 
 // Swipe on a phone; the arrow keys (or WASD) on anything with them.
@@ -43,17 +44,46 @@ export function create({ root, me, send }) {
   let clock = null;
 
   const board = canvas(root, (context, side) => {
-    const frame = clock?.read(performance.now());
+    const now = performance.now();
+    const frame = clock?.read(now);
     if (!frame) return;
 
     paint(context, side, frame, me);
+
+    // Nothing unless the page was loaded with ?debug. It reads the head off the
+    // very cells that were just painted, so what it reports is what is on the
+    // screen and not a second opinion about it.
+    if (meter) {
+      const mine = frame.state.snakes.find((snake) => snake.player === me.sub);
+      const stats = clock.debug(now);
+      if (mine) {
+        meter.frame({
+          now,
+          head: where(frame, mine, 0),
+          path: frame.ahead ? "live" : "catching up",
+          delayMs: stats.delayTicks * stats.tickMs,
+          tickMs: stats.tickMs,
+          dropped: stats.dropped,
+          stateAge: stats.stateAge,
+        });
+      }
+    }
   });
   hint(root, t("snake.hint"));
+
+  // After canvas(), which replaces the root's children -- same reason hint() is.
+  // The paint loop above closes over this, and only ever runs from a
+  // requestAnimationFrame, which is to say after this line.
+  const meter = readout(root);
 
   // One deduper for every way of steering. A swipe, a key and a button are all
   // the same intent, and if each kept its own idea of what the server was last
   // told they would disagree the moment somebody used two of them.
-  const intend = onChange(send);
+  const post = onChange(send);
+  const intend = (input) => {
+    meter?.pressed(); // start the stopwatch: key now, turn on some later frame
+    post(input);
+  };
   const stopKeys = keys(ARROWS, intend);
   const stopSwipe = swipe(board.element, intend, SWIPES);
 
@@ -78,6 +108,20 @@ export function create({ root, me, send }) {
   };
 }
 
+// Forwards into the move the server says is coming, or -- when a state went
+// missing and we are behind -- backwards down the body towards the state we did
+// get. A dead snake is not going anywhere at all: it dies WITHOUT moving, so its
+// body still reads as a perfectly good path, and walking it in either direction
+// would drag the corpse off the cell it died on. Both walks refuse.
+//
+// The readout calls this too, on the same frame, so the speed it reports is the
+// speed of the snake that was actually drawn rather than a second opinion.
+function where(frame, snake, index) {
+  return frame.ahead
+    ? ahead(snake, index, frame.alpha)
+    : at(snake, index, frame.alpha, snake.alive ? frame.span : 0);
+}
+
 function paint(context, side, frame, me) {
   const game = frame.state;
   const cell = side / game.width;
@@ -92,22 +136,12 @@ function paint(context, side, frame, me) {
     context.fill();
   }
 
-  // Forwards into the move the server says is coming, or -- when a state went
-  // missing and we are behind -- backwards down the body towards the state we
-  // did get. A dead snake is not going anywhere at all: it dies WITHOUT moving,
-  // so its body still reads as a perfectly good path, and walking it in either
-  // direction would drag the corpse off the cell it died on. Both walks refuse.
-  const where = (snake, index) =>
-    frame.ahead
-      ? ahead(snake, index, frame.alpha)
-      : at(snake, index, frame.alpha, snake.alive ? frame.span : 0);
-
   game.snakes.forEach((snake, seat) => {
     context.fillStyle = COLOURS[seat % COLOURS.length];
     context.globalAlpha = snake.alive ? 1 : 0.25;
 
     snake.cells.forEach((_, index) => {
-      const [x, y] = where(snake, index);
+      const [x, y] = where(frame, snake, index);
       const inset = index === 0 ? 0 : cell * 0.08; // the head is a little bigger
       context.fillRect(
         x * cell + inset,
@@ -119,7 +153,7 @@ function paint(context, side, frame, me) {
 
     // Ring your own head so you can find yourself in a six-snake scrum.
     if (snake.player === me.sub && snake.alive) {
-      const [hx, hy] = where(snake, 0);
+      const [hx, hy] = where(frame, snake, 0);
       context.strokeStyle = "#fff";
       context.lineWidth = 2;
       context.strokeRect(hx * cell + 1, hy * cell + 1, cell - 2, cell - 2);
