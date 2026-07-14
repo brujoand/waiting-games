@@ -306,7 +306,9 @@ def test_the_card_finds_its_own_foundation():
 
 
 def test_only_one_card_at_a_time_goes_home():
-    game = board([["3H", "2S"], [], [], [], [], [], []], foundations=[["AS"], [], [], []])
+    game = board(
+        [["3H", "2S"], [], [], [], [], [], []], foundations=[["AS"], [], [], []]
+    )
 
     with rejected("solitaire.one_card_at_a_time"):
         game.apply_move(A, {"card": "3H", "to": "f"})
@@ -353,7 +355,9 @@ def test_only_the_top_of_the_waste_is_in_play():
 
 
 def test_only_the_top_of_a_foundation_comes_back_off():
-    game = board([["3H"], [], [], [], [], [], []], foundations=[["AS", "2S"], [], [], []])
+    game = board(
+        [["3H"], [], [], [], [], [], []], foundations=[["AS", "2S"], [], [], []]
+    )
 
     with rejected("solitaire.card_is_buried"):
         game.apply_move(A, {"card": "AS", "to": "t0"})
