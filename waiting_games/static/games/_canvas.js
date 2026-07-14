@@ -37,10 +37,42 @@ export function canvas(root, paint) {
   };
   window.addEventListener("resize", resize);
 
+  // The loop must not be able to die. It used to:
+  //
+  //     context.clearRect(...);
+  //     paint(context, side);            // <- throws
+  //     frame = requestAnimationFrame(loop);   // <- never runs
+  //
+  // One exception anywhere in a renderer and the next frame is never scheduled.
+  // The game freezes for ever -- BLANK if it threw before drawing, FROZEN mid-board
+  // if after -- and says nothing at all. On a phone, where there is no console to
+  // open, that is a game that is simply broken with no way to find out why. It cost
+  // a day.
+  //
+  // So: reschedule in a `finally`, which cannot be skipped, and SAY SO on the page
+  // itself. A renderer that throws every frame will now stutter and complain rather
+  // than die in silence, and the complaint is legible from the sofa.
+  let broke = null;
+
+  function fail(error) {
+    if (broke) return; // once. A throw every frame must not become a wall of text.
+    broke = document.createElement("p");
+    broke.className = "hint broke";
+    broke.textContent = `renderer: ${error?.message ?? error}`;
+    root.append(broke);
+    // ...and the whole thing where a console exists.
+    console.error("renderer threw; the board will keep painting", error);
+  }
+
   function loop() {
-    context.clearRect(0, 0, side, side);
-    paint(context, side);
-    frame = requestAnimationFrame(loop);
+    try {
+      context.clearRect(0, 0, side, side);
+      paint(context, side);
+    } catch (error) {
+      fail(error);
+    } finally {
+      frame = requestAnimationFrame(loop);
+    }
   }
   frame = requestAnimationFrame(loop);
 
@@ -53,6 +85,7 @@ export function canvas(root, paint) {
     destroy() {
       cancelAnimationFrame(frame);
       window.removeEventListener("resize", resize);
+      broke?.remove();
     },
   };
 }
