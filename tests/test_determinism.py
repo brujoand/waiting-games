@@ -38,12 +38,20 @@ CASES = [
     (
         "turning, and eating on the way",
         4242,
-        [{"tick": 2, "dir": "down"}, {"tick": 7, "dir": "right"}, {"tick": 14, "dir": "up"}],
+        [
+            {"tick": 2, "dir": "down"},
+            {"tick": 7, "dir": "right"},
+            {"tick": 14, "dir": "up"},
+        ],
     ),
     (
         "a reversal, which both must refuse",
         1337,
-        [{"tick": 1, "dir": "left"}, {"tick": 3, "dir": "up"}, {"tick": 4, "dir": "down"}],
+        [
+            {"tick": 1, "dir": "left"},
+            {"tick": 3, "dir": "up"},
+            {"tick": 4, "dir": "down"},
+        ],
     ),
     (
         "steering into its own neck the long way round",
@@ -76,8 +84,12 @@ def in_javascript(seed: int, moves: list[dict], ticks: int) -> dict:
     }}
     process.stdout.write(JSON.stringify(g.state()));
     """
-    result = subprocess.run(
-        ["node", "--input-type=module", "-e", script],
+    # Running node from a test is the entire point of this file -- the only way to
+    # know the browser's rulebook agrees with Python's is to ask the browser's
+    # engine. The script is built here from constants above; nothing in it comes
+    # from anywhere a user could reach.
+    result = subprocess.run(  # noqa: S603
+        ["node", "--input-type=module", "-e", script],  # noqa: S607
         capture_output=True,
         text=True,
         check=True,
