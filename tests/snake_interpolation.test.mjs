@@ -264,7 +264,6 @@ test("wifi jitter costs exactly the jitter, and not a fixed slice of a tick", ()
   const { worst, jumps, clock } = play({ jitter: (k) => wobble[k % wobble.length] });
 
   assert.equal(jumps, 0, "jitter must not reach the screen");
-  assert.ok(worst <= 1.1, `worst frame was ${worst.toFixed(2)}x normal speed`);
 
   const cost = clock.debug().delayTicks * TICK;
   assert.ok(cost <= 45, `paid ${cost.toFixed(0)}ms against 40ms of jitter`);
@@ -272,6 +271,12 @@ test("wifi jitter costs exactly the jitter, and not a fixed slice of a tick", ()
     cost < 0.5 * TICK,
     `${cost.toFixed(0)}ms is no better than the half-tick it replaces`,
   );
+
+  // The snake may run a LITTLE fast, walking off a hold rather than cashing it in
+  // on one frame -- that is CATCHUP, and it is what lets the delay above stay
+  // small. What it may never do is jump. A 12% wobble nobody can see is the price
+  // of not paying half a tick up front against a jitter you have not measured.
+  assert.ok(worst <= 1.5, `worst frame ran at ${worst.toFixed(2)}x -- that is a lurch`);
 });
 
 test("a dropped state is glided across, not teleported over", () => {
@@ -284,6 +289,92 @@ test("a dropped state is glided across, not teleported over", () => {
 
   assert.equal(jumps, 0, "a dropped state must not teleport the snake");
   assert.ok(worst <= 1.6, `worst frame was ${worst.toFixed(2)}x normal speed`);
+});
+
+test("a phone that sleeps and flushes never costs more than a tick of blindness", () => {
+  // A REAL REPORT, off a real iPhone. Nothing was dropped -- the radio naps under
+  // power saving and then flushes what it held, so every state arrives, just late
+  // and in clumps. The renderer answered that by buying delay, and the ceiling on
+  // the delay was SIX TICKS, because it had been set by asking how bad a line can
+  // get rather than what a player can stand.
+  //
+  // It climbed to 826ms and stayed: `key -> turn` went 216ms, 298ms, 200ms, 166ms,
+  // and then 400, 383, 366, 417, 449 and never came back down, because the delay
+  // forgot at 0.995 a packet -- a half-life of twenty-three seconds, in a game that
+  // lasts thirty. The player's words were: "I died before I saw the snake hit the
+  // wall." He was steering a snake from nearly a second ago, and the renderer
+  // thought it was doing him a favour.
+  //
+  // A snake that stutters can still be steered. A snake you are watching from the
+  // past cannot be steered at all.
+  const clock = timeline(HZ);
+  const FRAME = 1000 / 60;
+  let tick = 0;
+  let sentUpTo = -1;
+
+  // Thirty seconds. Every two seconds the radio naps for 400ms, then flushes.
+  const arrivals = [];
+  for (let k = 0; k < 180; k += 1) {
+    let at = k * TICK + [8, -4, 12, 2, -6, 15, 3, -2][k % 8];
+    if (k % 12 === 0 && k > 0) sentUpTo = at + 400; // asleep...
+    if (at < sentUpTo) at = sentUpTo; // ...and everything held lands at once
+    arrivals.push(at);
+  }
+
+  let worstDelay = 0;
+  let worstSpeed = 0;
+  let previous = null;
+  const lags = [];
+
+  for (let now = 0; now < 180 * TICK; now += FRAME) {
+    while (tick < 180 && arrivals[tick] <= now) {
+      clock.accept(stateAt(tick), tick, arrivals[tick]);
+      tick += 1;
+    }
+    const frame = clock.read(now);
+    if (!frame) continue;
+
+    worstDelay = Math.max(worstDelay, clock.debug().delayTicks * TICK);
+
+    // The thing the player actually pays: how far behind the server's real snake
+    // the drawn one is. The server steps onto cell k at k * TICK.
+    const drawn = head(clock, now);
+    lags.push((Math.floor(now / TICK) - drawn) * TICK);
+    if (previous !== null) {
+      worstSpeed = Math.max(worstSpeed, (Math.abs(drawn - previous) / FRAME) * TICK);
+    }
+    previous = drawn;
+  }
+
+  const sorted = [...lags].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)];
+
+  // During the nap itself the player IS blind, and no renderer can fix that: while
+  // nothing is arriving, nobody knows where the snake went, and drawing the future
+  // is guessing. That lag belongs to the radio.
+  //
+  // What must never happen again is the renderer keeping it. The delay it CHOOSES
+  // to buy is bounded, and it is handed straight back -- so between naps, when the
+  // states are arriving perfectly well, the snake on screen is the snake the server
+  // has. That is what was broken: 826ms of self-inflicted blindness, held all game,
+  // on a connection that was fine most of the time.
+  assert.ok(
+    worstDelay <= TICK + 1,
+    `the delay reached ${worstDelay.toFixed(0)}ms -- a player cannot steer through that`,
+  );
+  assert.ok(
+    median <= TICK,
+    `the snake is ${median.toFixed(0)}ms in the past most of the time, not just during ` +
+      `the naps -- the delay is being kept instead of given back`,
+  );
+  // Exactly CATCHUP, and not a hair over: the limiter is what is holding it there,
+  // which is the whole point. Coming off a nap the snake walks the deficit off at
+  // one and a half times its pace instead of cashing it in on one frame -- and a
+  // frame that cashes it in is a jump, which is the thing this file exists to stop.
+  assert.ok(
+    worstSpeed <= 1.51,
+    `worst frame ran at ${worstSpeed.toFixed(2)}x: catching up must walk, not lurch`,
+  );
 });
 
 test("a bad connection buys itself some buffer, and gives it back afterwards", () => {

@@ -49,14 +49,52 @@
 // so it never cuts a corner -- and it is why `next` is needed for the head alone.
 // Everything behind the head already knows where it is going.
 
-// Never fall further behind than this, however bad it gets. Past here the game
-// is unplayable anyway, and holding is honest where a minute of lag is not.
-const CEILING_TICKS = 6;
+// The most delay a PLAYER can be asked to pay, whatever the connection is doing.
+//
+// This used to be six ticks -- a full second -- chosen by asking how bad a line
+// could get. That is the wrong question, and a phone answered it: on a radio that
+// sleeps and flushes, the delay climbed to 826ms and stayed there, and 826ms of
+// render delay is not lag, it is BLINDNESS. You steer a snake that crashed a
+// second ago. The bug report was "I died before I saw the snake hit the wall",
+// and that is exactly what the renderer was built to do.
+//
+// So the bound is set by what a player can stand, not by what a network can do.
+// One tick. Past that, holding on the cell and catching up afterwards is better
+// than being shown the past -- a snake that stutters can still be steered, and a
+// snake you are watching from a second ago cannot be steered at all.
+//
+// On a connection that delivers in clumps you cannot have both low latency and
+// smooth motion. Something has to give, and it is not going to be the steering.
+const MAX_DELAY_TICKS = 1;
 
-// How fast the delay forgets. It grows INSTANTLY -- a jump you have already
-// drawn cannot be un-drawn -- and shrinks slowly, so one bad moment does not
-// leave the game laggy forever, and a flaky connection does not oscillate.
-const FORGET = 0.995;
+// How fast the render clock may run to pay off a hold. Coming off a hold, the
+// world is behind and has to catch up -- and cashing that in on one frame is a
+// JUMP, which is the thing this file exists to prevent. So walk it back instead:
+// a little faster than real time until it rejoins, and never faster than this.
+//
+// It is what lets the delay above be small. Without it, the only way to never
+// lurch is to never be behind, and the only way to never be behind is to buy the
+// delay up front -- which is how a second of it got bought.
+const CATCHUP = 1.5;
+
+// Past THIS much lateness the origin estimate is broken rather than the network.
+// Different question, different number -- see the re-anchor in accept().
+const STALE_TICKS = 6;
+
+// How much history to keep: enough to walk back across the worst gap we will
+// ever draw across.
+const KEEP = STALE_TICKS + 3;
+
+// How fast the delay forgets. It grows INSTANTLY -- a jump you have already drawn
+// cannot be un-drawn -- and shrinks over a couple of seconds.
+//
+// It used to shrink at 0.995 a packet, which at 6 Hz is a half-life of TWENTY-THREE
+// SECONDS: one bad moment in the first few seconds taxed the entire game, and a
+// player watched `key -> turn` climb from 200ms to 450ms and stay there. A delay
+// that outlives the round that caused it is a ratchet. This heals in about three
+// seconds, which is short enough to be forgiven and long enough not to oscillate --
+// and it is safe to be this quick now, because CATCHUP smooths the shrinking.
+const FORGET = 0.96;
 
 // A delay smaller than this is not a delay. See settle().
 const SETTLE_MS = 5;
@@ -119,12 +157,14 @@ export function timeline(tickHz) {
   // rewind the world), and just as importantly, a moment we could not draw is a
   // moment we must not later pretend we had.
   let last = null;
+  let lastAt = null; // ...and when, so a hold can be walked off rather than cashed in
 
   function delayTicks() {
     // Nought on a clean line, and nought is not a floor we are choosing to sit
     // on: once the far cell is on the wire there is genuinely nothing left to
-    // wait for. Every tick of this is a tick some connection actually charged us.
-    return clamp(gap - 1 + late, 0, CEILING_TICKS);
+    // wait for. Every tick of this is a tick some connection actually charged us
+    // -- and never more than one, however much it charges. See MAX_DELAY_TICKS.
+    return clamp(gap - 1 + late, 0, MAX_DELAY_TICKS);
   }
 
   // Below a few milliseconds there is nothing left to give back. The decay is an
@@ -171,7 +211,7 @@ export function timeline(tickHz) {
       // anyway, so the delay buys nothing -- and a packet that claims to be later
       // than the game can be played is not a late packet, it is a broken estimate.
       // Believe the packet, not the estimate, and start again from here.
-      if (lateness > CEILING_TICKS) {
+      if (lateness > STALE_TICKS) {
         origin = ideal;
         lateness = 0;
         late = 0;
@@ -190,14 +230,15 @@ export function timeline(tickHz) {
 
       // Two states either side of the render point is all that is ever drawn.
       // Keep a little history for a delay that has just grown, and no more.
-      while (states.length > CEILING_TICKS + 3) states.shift();
+      while (states.length > KEEP) states.shift();
     },
 
     read(now) {
       if (origin === null || states.length === 0) return null;
 
-      // Real time, in ticks. No delay: the move in flight is one the server has
-      // already committed to, so there is nothing to wait for.
+      // Real time, in ticks, less whatever the connection is charging us today.
+      // Nought on a clean line: the move in flight is one the server has already
+      // committed to, so there is nothing to wait for.
       let want = (now - origin) / tickMs - delayTicks();
 
       // ...but never past the end of the move we were told about. Beyond that we
@@ -205,8 +246,27 @@ export function timeline(tickHz) {
       // point of `next` is that we no longer have to. Hold on the cell instead --
       // which is exactly where the state, when it lands, will say the snake is.
       want = Math.min(want, newest + 1);
-      if (last !== null && want < last) want = last; // never rewind
+
+      if (last !== null) {
+        if (want < last) {
+          want = last; // never rewind
+        } else {
+          // Never LURCH, either. We may be behind -- a state was late, or the
+          // delay just shrank -- and the whole deficit is sitting there waiting to
+          // be cashed in on the very next frame, which is a jump, which is the one
+          // thing this file exists to prevent. Walk it back instead: a little
+          // faster than real time until the world rejoins itself.
+          //
+          // This is what pays for a small MAX_DELAY_TICKS. Without it the only way
+          // never to lurch is never to be behind, and the only way never to be
+          // behind is to buy the delay up front -- which is how a phone came to be
+          // rendering a second in the past.
+          const elapsed = (now - lastAt) / tickMs;
+          want = Math.min(want, last + elapsed * CATCHUP);
+        }
+      }
       last = want;
+      lastAt = now;
 
       // The normal case: inside the move the newest state told us was coming.
       if (want > newest) {
@@ -225,10 +285,12 @@ export function timeline(tickHz) {
 
       if (before === null) {
         last = states[0].tick;
+        lastAt = now;
         return { state: states[0].state, alpha: 1, span: 0 };
       }
       if (after === null) {
         last = before.tick;
+        lastAt = now;
         return { state: before.state, alpha: 1, span: 0 };
       }
 
