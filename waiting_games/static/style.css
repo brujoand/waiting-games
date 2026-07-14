@@ -1381,56 +1381,55 @@ header {
 
 /* -- solitaire ------------------------------------------------------------ */
 
-/* Seven columns of cards is the widest board on the platform, and a phone is not
-   wide. So the card SIZES from a viewport unit rather than from a breakpoint: seven
-   of them plus their gaps have to fit whatever they are given, and there is no width
-   at which that stops being true. This stylesheet has never needed a media query for
-   layout and this board does not either. */
-.board-solitaire {
-  --card-w: min(3.6rem, 12.5vw);
-  --card-h: calc(var(--card-w) * 1.39);
-  /* How much of a card under another one you can still read. A face-up card shows
-     its corner, because that corner is the only thing you need. A face-down card
-     shows less: there is nothing written on it. */
-  --peek: calc(var(--card-w) * 0.39);
-  --peek-back: calc(var(--card-w) * 0.17);
+/* Seven columns of cards is the widest board on the platform and a phone is not wide,
+   so both rows are the SAME seven-track grid: it fills what it is given and the tracks
+   shrink to fit. No breakpoint, and no viewport arithmetic guessing at the padding it
+   sits in -- the first version did that and overflowed a 390px phone by the width of
+   the page margins.
 
+   Seven tracks also happens to be exactly the top row: stock, waste, a gap, and four
+   foundations. So the foundations sit squarely above the columns they feed. */
+.board-solitaire {
   display: grid;
   gap: 0.9rem;
   margin-bottom: 1rem;
 }
 
-/* The shared card is a fixed size (it is a hand of four in Gris, and nine in Idiot).
-   Here it is one of fifty-two on a board, so it takes the board's. */
-.board-solitaire .card {
-  width: var(--card-w);
-  height: var(--card-h);
-  font-size: calc(var(--card-w) * 0.36);
+.sol-deal,
+.sol-tableau {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 0.45rem;
+  width: 100%;
+  /* Full size on a screen with room, and no bigger -- a card blown up to fill a
+     desktop stops looking like a card. */
+  max-width: calc(7 * 3.6rem + 6 * 0.45rem);
+  margin-inline: auto;
+}
+
+.sol-tableau {
+  align-items: start;
+}
+
+/* A card here is one of fifty-two on a board rather than one of four in a hand, so it
+   takes the width of its column and its height from its shape. Everything below is a
+   PERCENTAGE of that width, which is what lets the whole board scale with one number. */
+.board-solitaire .card,
+.sol-ghost,
+.sol-again {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 36 / 50;
+  font-size: min(1.3rem, 3.4vw);
 }
 
 .board-solitaire .card i {
-  font-size: calc(var(--card-w) * 0.42);
-}
-
-/* -- the stock, the waste, and the four foundations -- */
-
-.sol-deal {
-  display: flex;
-  align-items: flex-start;
-  gap: calc(var(--card-w) * 0.14);
+  font-size: min(1.5rem, 3.9vw);
 }
 
 .sol-slot {
   display: grid;
   place-items: center;
-  width: var(--card-w);
-}
-
-/* The gap between where the cards come FROM and where they are going TO. It is the
-   only thing separating the two halves of that row, and the game reads wrong without
-   it: a foundation next to the waste looks like somewhere the waste goes. */
-.sol-gap {
-  flex: 1;
 }
 
 .sol-stock small {
@@ -1440,18 +1439,15 @@ header {
   font-variant-numeric: tabular-nums;
 }
 
-/* A card-shaped hole: an empty foundation, an empty column, and the stock once it
-   has been turned over and is waiting to come round again. */
+/* A card-shaped hole: an empty foundation, an empty column, and the stock once it has
+   been turned over and is waiting to come round again. */
 .sol-ghost,
 .sol-again {
-  width: var(--card-w);
-  height: var(--card-h);
   padding: 0;
   border: 1px dashed var(--line);
   border-radius: 8px;
   background: none;
   color: var(--muted);
-  font-size: calc(var(--card-w) * 0.42);
   line-height: 1;
   cursor: pointer;
 }
@@ -1474,13 +1470,24 @@ header {
   color: color-mix(in srgb, #d9534f 55%, transparent);
 }
 
-/* -- the seven columns -- */
+/* -- the pile -- */
 
-.sol-tableau {
-  display: grid;
-  grid-template-columns: repeat(7, var(--card-w));
-  gap: calc(var(--card-w) * 0.14);
-  justify-content: center;
+/* THE ORDER CARDS PAINT IN.
+   Every card in a column is positioned, and that is not decoration -- it is the only
+   thing making the pile stack the right way up.
+
+   The shared card fades a disabled one (`.card:disabled { opacity: 0.7 }`), and an
+   element with an opacity below 1 gets a stacking context of its own, which paints in
+   the SAME late layer as a positioned element. A face-down card is disabled, because
+   there is nothing to do with it; a face-up card is not. So the backs were painting
+   over the face-up card on top of them, in defiance of the document order, and the top
+   of every pile was hidden behind the cards it was covering.
+
+   Nothing in Gris or Idiot could ever have shown that: their cards do not overlap.
+   Position them all, and the layer is the same for every card again -- so tree order
+   decides, and the card on top of the pile is the one on top of the pile. */
+.sol-column > .card {
+  position: relative;
 }
 
 .sol-column {
@@ -1489,22 +1496,25 @@ header {
   align-items: center;
 }
 
-/* The pile. Every card but the first is pulled up over the one before it, so a
-   column of nineteen still fits on a screen -- and the corner of each one stays
-   readable, which is the whole reason a real deck is fanned like this. */
+/* Each card is pulled up over the one before it, so a column of nineteen still fits on
+   a screen and the corner of each one stays readable -- which is the whole reason a
+   real deck is fanned like this.
+
+   A percentage margin resolves against the WIDTH of the containing block, which here is
+   the column, which is the card. So -100% is exactly one card's width -- and a card is
+   1.39 wide by shape, so 39% of it is left showing. */
 .sol-column > .card + .card {
-  margin-top: calc(var(--peek) - var(--card-h));
+  margin-top: -100%;
 }
 
-/* ...and a back over a back shows less still. This has to come second: a back is a
-   .card too, so the rule above matches it. */
+/* A back over a back shows less: there is nothing written on it to read. This has to
+   come second -- a back is a .card too, so the rule above matches it. */
 .sol-column > .card-back + .card-back {
-  margin-top: calc(var(--peek-back) - var(--card-h));
+  margin-top: -122%;
 }
 
-/* A lifted card, and the run under it, come off the pile TOGETHER -- and have to come
-   off over the top of the cards they are still sitting among. */
+/* A lifted card, and the run under it, come off the pile TOGETHER -- and over the top
+   of the cards they are still sitting among. */
 .board-solitaire .card[data-chosen="true"] {
-  position: relative;
   z-index: 1;
 }
