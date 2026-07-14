@@ -344,6 +344,51 @@ async def lobby_socket(websocket: WebSocket) -> None:
         lobby.lobby_sockets.discard(entry)
 
 
+# A browser-run game cannot be allowed to ask for a simulation of any size it
+# likes: `ticks` is a loop bound on OUR machine. At 6 Hz these are half an hour of
+# play and a turn every other tick, which is far past anything a person does and
+# far short of anything that hurts.
+MAX_CLIENT_TICKS = 12_000
+MAX_CLIENT_MOVES = 6_000
+
+
+async def settle_client_run(session, player, data: dict) -> None:
+    """The browser finished a game it was running. Find out whether it is right.
+
+    The whole safety of a client-run game lives here, and it is not a check on the
+    client's honesty -- it is arithmetic. The run is a pure function of (seed,
+    moves, ticks); we issued the seed, and the moves are the only thing we did not
+    already have. So we play the game again ourselves and take the board that comes
+    out. Whatever the browser SAID happened is never read.
+
+    A client that lies about its score gets the score its moves actually earn. A
+    client that submits moves it never made has played the game well, from a
+    keyboard we cannot see -- which is what it was invited to do, and is not a
+    problem this server was ever able to solve.
+    """
+    engine = session.engine
+    if not engine.realtime or not engine.client_clock:
+        return  # not a game anybody handed to a browser
+    if not engine.started or engine.over:
+        return  # already settled, or never dealt
+
+    seat = engine.seat_of(player.sub)
+    if seat is None:
+        return  # a spectator does not get to end somebody else's game
+
+    moves = data.get("moves") or []
+    ticks = int(data.get("ticks") or 0)
+    if not isinstance(moves, list) or len(moves) > MAX_CLIENT_MOVES:
+        return
+    ticks = max(0, min(ticks, MAX_CLIENT_TICKS))
+
+    async with session.lock:
+        engine.run(moves, ticks)
+
+    await lobby.broadcast_state(session)
+    await lobby.broadcast_lobby()
+
+
 @app.websocket("/ws/sessions/{session_id}")
 async def game_socket(websocket: WebSocket, session_id: str) -> None:
     try:
@@ -374,6 +419,14 @@ async def game_socket(websocket: WebSocket, session_id: str) -> None:
 
             if kind == "ping":
                 await websocket.send_json({"type": "pong", "data": {}})
+                continue
+
+            if kind == "result":
+                # A game the BROWSER ran, telling us how it went. We do not take its
+                # word for it: the run is a pure function of the seed we handed out
+                # and the moves it says it made, so we play it again here and look at
+                # the board ourselves. See RealTimeGame.client_clock.
+                await settle_client_run(session, player, message.get("data", {}))
                 continue
 
             if kind != "move":

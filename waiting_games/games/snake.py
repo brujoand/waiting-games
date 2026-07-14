@@ -37,9 +37,11 @@ behind. Half a tick to see your own turn, where it used to be a tick and a half.
 
 from __future__ import annotations
 
-import random
+import contextlib
+import secrets
 from dataclasses import dataclass
 
+from ._rng import Rng
 from .base import InvalidMove, RealTimeGame, Result
 
 WIDTH = HEIGHT = 24
@@ -112,15 +114,67 @@ class Snake(RealTimeGame):
     # exactly this interval, so tuning it here is the whole change.
     tick_hz = 6.0
 
-    def __init__(self) -> None:
+    def __init__(self, seed: int | None = None) -> None:
         super().__init__()
         self.snakes: list[SnakeBody] = []
         self.apples: list[tuple[int, int]] = []
-        self.rng = random.Random()
         self.elapsed = 0.0
+
+        # The seed goes ON THE WIRE, and it is what lets the browser run this game
+        # itself rather than watch a recording of it over a radio that keeps
+        # falling asleep. Same seed, same rules, same apples, same death -- so a
+        # solo run needs no packet in its render loop at all, and the server can
+        # still check the score afterwards by replaying it.
+        #
+        # Which means the generator cannot be `random`: a Mersenne Twister cannot
+        # be written twice. See _rng.py.
+        self.seed = secrets.randbelow(2**32) if seed is None else seed & 0xFFFFFFFF
+        self.rng = Rng(self.seed)
+
+    @property
+    def client_clock(self) -> bool:
+        """Solo is played in the browser and checked here. See base.RealTimeGame.
+
+        One snake, one input stream, one seed -- so the browser can simply play it,
+        and a phone stops being at the mercy of a radio that naps through our ticks.
+        The moment there are two snakes there is a collision to arbitrate, and that
+        is the server's job and nobody else's.
+        """
+        return len(self.players) == 1
+
+    def run(self, moves: list[dict], ticks: int) -> None:
+        """Play the run the browser says it played, and see what really happened.
+
+        The run is a pure function of the seed we handed out, the moves the player
+        made, and the ticks they took -- so we simply make it again, here, and look
+        at the board ourselves. The score is not taken on trust; it is recomputed.
+
+        A client that lies about its score gets the score its moves actually earn. A
+        client that lies about its MOVES has merely played the game well, which is
+        what it was invited to do.
+        """
+        at_tick: dict[int, list[dict]] = {}
+        for move in moves:
+            at_tick.setdefault(int(move["tick"]), []).append(move)
+
+        for tick in range(ticks):
+            for move in at_tick.get(tick, []):
+                with contextlib.suppress(InvalidMove):
+                    # A move rejected here is one the browser's own copy of the
+                    # rules rejected too -- it is the same rulebook, pinned by
+                    # tests/test_determinism.py. Suppressing it keeps a replay
+                    # checking the OUTCOME rather than re-litigating every keypress.
+                    self.apply_move(self.players[0], {"dir": move["dir"]})
+            if self.over:
+                return
+            self.tick(1 / self.tick_hz)
 
     def _on_start(self) -> None:
         """Space the snakes evenly down the board, all facing right."""
+        # From here the game is a pure function of (seed, the moves, the ticks).
+        # Restarting the generator here rather than in __init__ is what makes that
+        # true: a replay must begin from the same place the run did.
+        self.rng = Rng(self.seed)
         self.snakes = []
         for seat in range(len(self.players)):
             row = (seat + 1) * HEIGHT // (len(self.players) + 1)
@@ -158,7 +212,10 @@ class Snake(RealTimeGame):
             (x, y) for x in range(WIDTH) for y in range(HEIGHT) if (x, y) not in taken
         ]
         if free:
-            self.apples.append(self.rng.choice(free))
+            # NOT random.choice: the browser has to pick the same cell, and it can
+            # only do that if the arithmetic is arithmetic it can also do. `free`
+            # is built in a fixed order -- x then y -- so an index is enough.
+            self.apples.append(free[self.rng.below(len(free))])
 
     # -- input is intent, not action --------------------------------------
 
@@ -292,6 +349,10 @@ class Snake(RealTimeGame):
         return {
             "width": WIDTH,
             "height": HEIGHT,
+            # The browser runs a SOLO game itself -- see client_clock -- and this is
+            # what lets it grow the same apples we would have. It is not a secret:
+            # it is the game, and the game is on the wire already.
+            "seed": self.seed,
             "apples": [list(apple) for apple in self.apples],
             # `seconds` is the SCORE, not a clock to animate against: it is rounded
             # to a tenth, and at these rates a tenth cannot tell one tick from two. The
@@ -322,3 +383,28 @@ class Snake(RealTimeGame):
                 for seat, snake in enumerate(self.snakes)
             ],
         }
+
+
+def replay(seed: int, players: list[str], moves: list[dict], ticks: int) -> Snake:
+    """Run a game again from its seed and its moves, and see what really happened.
+
+    This is what makes a browser-simulated game safe to trust. A solo run is played
+    entirely on the client -- it has to be, because a phone's radio cannot deliver a
+    tick on time and a game you watch over one is a game you cannot steer -- so the
+    score arrives as a claim rather than as something we watched happen.
+
+    A claim we can check. The run is a pure function of the seed we handed out, the
+    moves the player made, and the ticks they took, so we run it again here and look
+    at the result ourselves. A client that lies about its score gets the score it
+    actually earned; a client that lies about its MOVES has merely played the game
+    well, which is what it was invited to do.
+
+    `moves` is [{"tick": n, "dir": "left"}, ...] in tick order -- the input log, and
+    the only thing about the run that is not already ours.
+    """
+    game = Snake(seed=seed)
+    for player in players:
+        game.add_player(player)
+    game.start()
+    game.run(moves, ticks)
+    return game

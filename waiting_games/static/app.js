@@ -250,6 +250,15 @@ function sendMove(move) {
   }
 }
 
+// A browser-run game, reporting how it went: the seed was the server's, the moves
+// were ours, and the server plays it again to find out whether we are right. It is
+// not asked to believe us -- see settle_client_run() in main.py.
+function sendResult(result) {
+  if (gameSocket && gameSocket.readyState === WebSocket.OPEN) {
+    gameSocket.send(JSON.stringify({ type: "result", data: result }));
+  }
+}
+
 // -- login ------------------------------------------------------------------
 
 function renderLogin() {
@@ -518,13 +527,24 @@ async function renderGame() {
     }
   }
 
+  paintChrome(game);
+  renderer.update(game);
+}
+
+// Everything around the board: the buttons, the title, the status line, and the
+// fanfare. Split out of renderGame because a CLIENT-RUN game -- solo Snake, which
+// the browser simulates itself -- has to be able to repaint all of it from its own
+// state, several times a second, WITHOUT calling back into the renderer that just
+// produced that state. See publishLocal().
+function paintChrome(game) {
+  if (!statusEl) return; // not mounted (yet, or any more)
+
   // Whether the host may start, and whether there is anything to replay, are both
   // state-dependent -- so re-evaluate them on every push.
   startButtonEl.hidden = !mayStart(game);
   rematchButtonEl.hidden = !mayRematch(game);
   titleEl.textContent = gameTitle(game.game);
   statusEl.textContent = describeGame(game);
-  renderer.update(game);
 
   // The TRANSITION into game-over, not the state of being over. mountGame() has
   // already claimed the round if the game was finished when we arrived, so a
@@ -534,6 +554,22 @@ async function renderGame() {
     celebratedRound = roundKey(game);
     celebrate(outcomeOf(game), boardEl);
   }
+}
+
+// A game the BROWSER is running tells the platform what it can see.
+//
+// While a client-run game is in progress the server's copy of the board is the one
+// it dealt and nothing more -- it is not ticking, deliberately, because a second
+// simulation half a radio behind the first is how you get a player who died on one
+// screen and lived on the other. So the game's own view is the only live one, and
+// the status line, the game-over text and the confetti all have to read it.
+//
+// Merged OVER the platform's state rather than replacing it: seats, names, ids and
+// the round are still the platform's business and the game knows nothing about them.
+function publishLocal(local) {
+  if (!state.game) return;
+  state.game = { ...state.game, ...local };
+  paintChrome(state.game);
 }
 
 function outcomeOf(game) {
@@ -617,7 +653,16 @@ async function mountGame(game) {
 
   // Each game ships its own renderer; the platform only knows the game's key.
   gameModule = await import(`/static/games/${game.game}.js`);
-  renderer = gameModule.create({ root: board, me: state.me, send: sendMove });
+  renderer = gameModule.create({
+    root: board,
+    me: state.me,
+    send: sendMove,
+    // Only a client-run game uses these, and only Snake is one. `publish` is how it
+    // shows the platform the board it is actually playing; `finish` is how it hands
+    // the run over to be checked. See RealTimeGame.client_clock.
+    publish: publishLocal,
+    finish: sendResult,
+  });
   mountedRound = roundKey(game);
 }
 

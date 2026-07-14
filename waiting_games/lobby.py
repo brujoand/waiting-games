@@ -48,6 +48,7 @@ RESERVED_KEYS = frozenset(
         "sessionRound",
         "tick",
         "tickHz",
+        "clientClock",
     }
 )
 
@@ -135,7 +136,14 @@ class Session:
             # A real-time game's renderer needs BOTH: the rate to know how long a
             # tick lasts, and the index to know how many of them a state is worth.
             **(
-                {"tick": engine.ticks, "tickHz": engine.tick_hz}
+                {
+                    "tick": engine.ticks,
+                    "tickHz": engine.tick_hz,
+                    # ...and whether the browser is the one turning the handle. A
+                    # solo game is played there and checked here: see
+                    # base.RealTimeGame.client_clock.
+                    "clientClock": engine.client_clock,
+                }
                 if engine.realtime
                 else {}
             ),
@@ -400,6 +408,13 @@ class Lobby:
         from tests, where there is no event loop to create a task on).
         """
         if not session.engine.realtime or not session.engine.started:
+            return
+        if session.engine.client_clock:
+            # The browser is running this one. Giving it a clock here would put a
+            # SECOND simulation of the same game on the wire, half a radio behind
+            # the one the player is actually looking at, and the two would disagree
+            # about who died and when. The engine still plays it -- afterwards, from
+            # the moves the browser reports, to find out whether they are true.
             return
         if session.tick_task is None:
             session.tick_task = asyncio.create_task(self._tick_forever(session))

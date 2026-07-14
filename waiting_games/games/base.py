@@ -217,6 +217,41 @@ class RealTimeGame(Game):
 
     tick_hz: float = 15.0
 
+    @property
+    def client_clock(self) -> bool:
+        """Does the BROWSER run this game's clock, with the server only checking?
+
+        False for anything with more than one player in it. The moment there is a
+        second player there is something to arbitrate, and two browsers each certain
+        that they were the one who survived is not a game, it is an argument.
+
+        But a game with ONE player is a pure function of its seed and its inputs,
+        and it has nobody to disagree with. It does not need to be streamed to the
+        player a tick at a time; it needs to be PLAYED by them, with the server
+        checking the answer afterwards by running it again.
+
+        That is not a shortcut, it is the only thing that works. Measured on a real
+        phone, mid-game: states arrived a median of 168ms apart -- the tick,
+        exactly -- with a 90th percentile of 333ms and a worst of 2439ms, and
+        nothing dropped at all. Every one was sent on time and then held in the air
+        until the radio woke up to listen for it. You cannot steer a game you are
+        being told about two seconds late, and no renderer ever written fixes that.
+        The packet has to come out of the render loop.
+
+        A game that says True gets no clock from the lobby. It reports what happened
+        when it is done, and the engine replays it to find out whether that is true.
+        See Snake.run() and the `result` message in main.py.
+        """
+        return False
+
+    def run(self, moves: list[dict], ticks: int) -> None:
+        """Play a run the browser says it played, and find out what really happened.
+
+        Only ever called on a client_clock game. Default: a game that hands its
+        clock to the browser must be able to check the browser's homework.
+        """
+        raise NotImplementedError
+
     def __init__(self) -> None:
         super().__init__()
         # Which tick this is. The CLOCK advances it -- see lobby._tick_forever --

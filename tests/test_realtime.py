@@ -482,9 +482,20 @@ def test_a_real_time_game_gets_a_clock_and_a_turn_based_one_does_not():
         await lobby.launch(turn_based)
         assert turn_based.tick_task is None  # no clock: it only moves when you do
 
+        # Solo Snake is played in the BROWSER and checked here, so it is given no
+        # clock at all -- see RealTimeGame.client_clock. Two snakes have a collision
+        # to arbitrate, so the server keeps the handle.
+        solo = lobby.create("snake", ALICE)
+        lobby.begin(solo.id, ALICE)
+        await lobby.launch(solo)
+        assert solo.engine.client_clock
+        assert solo.tick_task is None, "a browser-run game must not be simulated twice"
+
         realtime = lobby.create("snake", ALICE)
-        lobby.begin(realtime.id, ALICE)  # solo Snake: the host just starts
+        lobby.join(realtime.id, BOB)  # ...and now there is somebody to disagree with
+        lobby.begin(realtime.id, ALICE)
         await lobby.launch(realtime)
+        assert not realtime.engine.client_clock
         assert realtime.tick_task is not None
 
         lobby.drop(realtime.id)  # reaping a session must stop its clock
@@ -501,6 +512,7 @@ def test_an_empty_room_parks_the_clock():
     async def scenario():
         lobby = Lobby()
         session = lobby.create("snake", ALICE)
+        lobby.join(session.id, BOB)  # two snakes: the SERVER clocks this one
         lobby.begin(session.id, ALICE)
         await lobby.launch(session)
 
@@ -599,6 +611,7 @@ def test_a_real_time_state_says_which_tick_it_is():
     async def scenario():
         lobby = Lobby()
         session = lobby.create("snake", ALICE)
+        lobby.join(session.id, BOB)  # two snakes: the SERVER clocks this one
         lobby.begin(session.id, ALICE)
 
         state = session.state(seat=0)
