@@ -6,3 +6,10 @@ venv/
 .ruff_cache/
 node_modules/
 *.egg-info/
+
+# The object detector I Spy plays with: 14MB of wasm and weights, fetched by
+# scripts/fetch-detector.sh, which pins every byte of it by SHA-256. Not in git,
+# because it would sit in the history for ever and never change; baked into the
+# image, because a game that phones a CDN mid-round is a game that stops working
+# on the day the CDN does.
+waiting_games/static/vendor/

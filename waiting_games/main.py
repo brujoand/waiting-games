@@ -28,6 +28,7 @@ from fastapi import (
 )
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import HTTPConnection
 
 from .auth import (
@@ -120,6 +121,15 @@ async def reap_forever() -> None:
 
 
 app = FastAPI(title="Waiting Games", lifespan=lifespan)
+
+# I Spy's detector is the first thing here big enough for this to matter: gzip
+# takes its wasm from 9MB to 2.8MB, which on a phone is the difference between
+# loading the game and giving up on it. Everything else we serve is small, and
+# compressing it costs nothing worth measuring.
+#
+# The game stream is untouched: the middleware only claims the http scope, so a
+# WebSocket goes straight past it.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 
 def identify(conn: HTTPConnection) -> Player:

@@ -36,6 +36,7 @@ container image.
 ```bash
 mise trust && mise install
 pip install -r requirements.txt pytest httpx
+./scripts/fetch-detector.sh         # 14MB of detector, for I Spy. Not in git.
 
 python -m pytest -q                 # tests
 node --test tests/*.test.mjs        # ...and the renderer's, which pytest cannot see
@@ -62,6 +63,10 @@ and arithmetic that went wrong — and this is what tells them apart.
   owns the board and the rules.
 - `waiting_games/main.py` — HTTP + WebSocket endpoints.
 - `waiting_games/static/` — the frontend. `games/<key>.js` renders game `<key>`.
+- `waiting_games/static/vendor/` — MediaPipe's object detector, which I Spy plays
+  with. **Not in git**: 14MB of wasm and weights, fetched by
+  `scripts/fetch-detector.sh` (which pins every byte by SHA-256) and baked into
+  the image. A checkout that has not run it gets a game that says so.
 
 ## Adding a game
 
@@ -72,6 +77,14 @@ change; if it does, the abstraction is wrong.
 
 Two things to get right:
 
+- **`public_state()` runs before `start()` does.** The lobby opens a game socket the
+  moment a session is created, and the first thing it broadcasts is `view(seat)` —
+  so your board is asked to describe itself with a seat taken, nothing dealt, and
+  every list still the empty one `__init__` made. Anything sized in `_on_start` and
+  then indexed BY SEAT is an `IndexError` on the first socket: the socket closes with
+  1008, and the player is bounced to a lobby that cheerfully lists the game they
+  cannot get into. Nothing in `base.Game` says so, which is why Gris shipped with the
+  waiting room broken. `test_a_game_can_be_looked_at_before_it_is_dealt` is the guard.
 - **Hidden information lives in `view(seat)`**, and the spectator view
   (`seat is None`) must be the MOST restricted one — any logged-in user may open
   a game socket and watch. Battleship and Hangman are the worked examples.
@@ -153,6 +166,46 @@ Two things to get right:
   turn-rate cap, and it is *soft*: a turn asked for too early is remembered, not refused.
 
 A game's `key` is also its renderer's filename. Renaming one renames both.
+
+## I Spy, and the camera
+
+The only game whose board is not on the screen, and the only one the server cannot
+referee. Worth reading before touching it, because two of these were found the
+expensive way.
+
+- **The server cannot see your camera, and does not pretend to.** Snake is safe
+  because a run is a pure function of `(seed, moves, ticks)` and we replay it. There
+  is no such trick when the input is a room. So the server checks only what it
+  honestly can — that a claim names the card actually on the table, and that the
+  photo is a JPEG of a sane size — and the PHOTO is the evidence: it goes up on
+  everybody's screen, and there is no red car in it. The referee is the table, which
+  for a game played in the same room is the right referee.
+- **That photo is the only player-supplied content this app shows to another
+  player.** `ispy.py`'s `PHOTO` regex is strict for that reason: base64 JPEG, nothing
+  else, length checked before the pattern. Not "any image" — an **SVG is a document
+  and can carry script**, and it passes every check that only reads the word before
+  the slash.
+- **The detector's model must be float16, not int8.** The int8 build is 3MB smaller
+  and DOES NOT WORK ON THE GPU, which is the delegate every phone gets. It does not
+  throw — it returns junk (pointed at a dog, a bicycle and a truck it reported
+  "dining table, 0.17"), so nothing catches it and no fallback fires. Measured:
+  float16 found all three at 0.65 on the same frame. If you are here to shrink the
+  download, the model is not where the 3MB is.
+- **Colour is not the model's job.** EfficientDet knows eighty nouns and no
+  adjectives, so "a red car" is not something it can be asked. But it returns a
+  BOX, and the colour of the pixels inside a box is arithmetic — `colourIn()` in
+  `_vision.js`. That is the entire reason the deck can ask for a colour.
+- **...but only of things a box is mostly full of.** A bounding box around a bicycle
+  is mostly the road behind the bicycle. Measured on a real frame: the dog came back
+  `black`, the truck `white`, and the bicycle `null` — its box had no majority colour
+  at all, which is the sampler working, not failing. Hence no coloured bicycles in
+  the deck, and a test that says so.
+- **The camera needs a secure context.** `getUserMedia` does not exist over plain
+  HTTP on a LAN address — `http://some-box:8080`, which is exactly how you would show
+  this to a room — so the game says so instead of throwing a `TypeError` nobody can
+  act on. Localhost counts as secure; a real deployment wants HTTPS anyway.
+- **A spectator is never asked for their camera.** The permission prompt is deferred
+  until a state arrives that says we have a seat.
 
 ## Language
 
