@@ -126,6 +126,40 @@ function stopHeartbeat() {
   heartbeat = null;
 }
 
+// A phone's wifi dozes between our ticks, and the access point buffers what it
+// cannot deliver.
+//
+// This is not a theory. A real iPhone, mid-game, reported the gaps between state
+// arrivals: median 168ms, which is the tick exactly -- and a NINETIETH PERCENTILE
+// of 333ms, which is two ticks, and a worst of 2439ms. Nothing was dropped. Every
+// state was sent on time and then held in the air until the radio next woke up to
+// listen for it. No renderer can answer that: it can be smooth or it can be
+// current, and on a line that stalls for two seconds it cannot be either for long.
+//
+// A wifi client that TRANSMITS stays awake. Six small pushes a second, downstream,
+// with nothing at all going back the other way, is precisely the traffic pattern
+// that invites it to doze. So say something. It costs twenty tiny frames a second
+// and some battery, and it buys a radio that is actually listening when the state
+// we already sent arrives.
+//
+// Only while a game is on screen. The lobby can doze all it likes.
+const AWAKE_MS = 50;
+let awake = null;
+
+function keepAwake() {
+  letTheRadioSleep();
+  awake = setInterval(() => {
+    if (gameSocket && gameSocket.readyState === WebSocket.OPEN) {
+      gameSocket.send(JSON.stringify({ type: "ping", data: {} }));
+    }
+  }, AWAKE_MS);
+}
+
+function letTheRadioSleep() {
+  if (awake) clearInterval(awake);
+  awake = null;
+}
+
 // -- routing ----------------------------------------------------------------
 
 function currentGameId() {
@@ -145,6 +179,7 @@ async function route() {
 
   if (gameId) {
     openGameSocket(gameId);
+    keepAwake(); // a phone's radio dozes between ticks -- see above
   } else {
     state.game = null;
     openLobbySocket();
@@ -153,6 +188,7 @@ async function route() {
 }
 
 function closeSockets() {
+  letTheRadioSleep();
   for (const socket of [lobbySocket, gameSocket]) {
     if (socket) {
       socket.onclose = null;
