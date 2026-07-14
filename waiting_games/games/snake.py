@@ -1,12 +1,16 @@
-"""Snake: steer your snake, eat the apples, don't crash. Last snake alive wins.
+"""Snake: steer your snake, eat the apples, don't crash. The Nokia game.
 
-The first real-time game. There are no turns: every player may steer on every
-tick, and a move is INTENT ("I am now heading left") that the clock acts on -- it
-does not move the snake by itself. That is what stops a held arrow key from
-turning into a message per frame.
+Solo, and solo is the whole game (max_players = 1): survive as long as you can,
+and your length is the score. It is a grid -- a matrix, one cell per tick, walls --
+and a grid cannot be shared, because the smallest error a wire can hand you is one
+whole CELL and a cell is exactly the granularity that decides whether you are
+alive. Snakes is the shared one; it left the grid behind in order to be.
 
-Solo is a first-class mode (min_players = 1): survive as long as you can, and
-your length is the score.
+Which is what makes this game a browser's to run: one snake, one input stream, one
+seed, nobody to disagree with. The server hands out the seed and replays the moves
+afterwards to see what really happened. There are no turns -- a move is INTENT ("I
+am now heading left") that the clock acts on, which is what stops a held arrow key
+from turning into a message per frame.
 
 -- why a move is DECIDED a tick before it HAPPENS ---------------------------
 
@@ -102,8 +106,19 @@ class SnakeBody:
 class Snake(RealTimeGame):
     key = "snake"
     title = "Snake"
+    category = "arcade"
     min_players = 1
-    max_players = 6
+    # ONE. This is the Nokia game -- a matrix, one cell per tick, walls -- and it
+    # works because a solo game never goes near a network. It cannot be shared, and
+    # for a while it pretended it could: on a grid the smallest error the wire can
+    # hand you is one whole CELL, and a cell is exactly the granularity that decides
+    # whether you are alive. A week went into interpolating, buffering and predicting
+    # a quantum the same size as the game, and none of it worked.
+    #
+    # Snakes is the shared one. Real positions, no edges, and the same 300ms of lag
+    # is worth a fifth of a unit there -- a smudge rather than a death. Play that one
+    # with your friends; this one is yours alone.
+    max_players = 1
     # The snake moves one cell per tick, so this IS the speed -- there is no
     # separate difficulty knob, and there must not be one. It was 8 Hz, which
     # players found too fast to steer: a 24-cell board crossed in three seconds
@@ -133,14 +148,13 @@ class Snake(RealTimeGame):
 
     @property
     def client_clock(self) -> bool:
-        """Solo is played in the browser and checked here. See base.RealTimeGame.
+        """Always. Snake is played in the browser and checked here.
 
         One snake, one input stream, one seed -- so the browser can simply play it,
         and a phone stops being at the mercy of a radio that naps through our ticks.
-        The moment there are two snakes there is a collision to arbitrate, and that
-        is the server's job and nobody else's.
+        There is never a second snake to arbitrate against: see max_players.
         """
-        return len(self.players) == 1
+        return True
 
     def run(self, moves: list[dict], ticks: int) -> None:
         """Play the run the browser says it played, and see what really happened.
@@ -170,16 +184,17 @@ class Snake(RealTimeGame):
             self.tick(1 / self.tick_hz)
 
     def _on_start(self) -> None:
-        """Space the snakes evenly down the board, all facing right."""
+        """One snake, halfway down the board, facing right."""
         # From here the game is a pure function of (seed, the moves, the ticks).
         # Restarting the generator here rather than in __init__ is what makes that
         # true: a replay must begin from the same place the run did.
         self.rng = Rng(self.seed)
-        self.snakes = []
-        for seat in range(len(self.players)):
-            row = (seat + 1) * HEIGHT // (len(self.players) + 1)
-            cells = [(START_LENGTH - i, row) for i in range(START_LENGTH)]
-            self.snakes.append(SnakeBody(cells, "right"))
+        # A list of one. The wire shape is a list of snakes and stays one -- the
+        # renderer, the replay and snake_rules.js all read `snakes[0]` -- so a game
+        # that seats one player is a list with one snake in it, not a special case.
+        row = HEIGHT // 2
+        cells = [(START_LENGTH - i, row) for i in range(START_LENGTH)]
+        self.snakes = [SnakeBody(cells, "right")]
 
         self.apples = []
         for _ in range(APPLES):
@@ -308,13 +323,7 @@ class Snake(RealTimeGame):
             if not (0 <= x < WIDTH and 0 <= y < HEIGHT):
                 doomed.add(snake)  # into the wall
             elif head in bodies:
-                doomed.add(snake)  # into somebody, possibly themselves
-            else:
-                # Two heads into the same cell: both of them.
-                rivals = [s for s, h in heads.items() if s is not snake and h == head]
-                if rivals:
-                    doomed.add(snake)
-                    doomed.update(rivals)
+                doomed.add(snake)  # into itself
 
         for snake in living:
             head = heads[snake]
@@ -330,18 +339,10 @@ class Snake(RealTimeGame):
             )
 
     def _settle(self) -> None:
-        alive = [seat for seat, snake in enumerate(self.snakes) if snake.alive]
-        solo = len(self.players) == 1
-
-        if solo:
-            if not alive:
-                self.finish(Result.draw())  # nobody to beat; the score is the length
-            return
-
-        if len(alive) == 1:
-            self.finish(Result(winner_seat=alive[0]))
-        elif not alive:
-            self.finish(Result.draw())  # everybody crashed on the same tick
+        # A draw, not a loss: there was nobody to beat, and the score is the length.
+        # snake.js turns that into the death it actually was -- see its outcome().
+        if not any(snake.alive for snake in self.snakes):
+            self.finish(Result.draw())
 
     # -- what everyone sees -----------------------------------------------
 

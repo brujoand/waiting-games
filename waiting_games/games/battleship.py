@@ -55,6 +55,7 @@ class Ship:
 class Battleship(Game):
     key = "battleship"
     title = "Battleship"
+    category = "board"
     min_players = 2
     max_players = 2
 

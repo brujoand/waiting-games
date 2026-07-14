@@ -34,14 +34,23 @@ def test_a_solo_game_hands_its_clock_to_the_browser_and_a_shared_one_does_not():
 
     Two snakes have a collision to arbitrate. That is the server's job and nobody
     else's: two browsers each certain they were the one who survived is not a game,
-    it is an argument."""
+    it is an argument.
+
+    Both halves in one test, because the rule is the CONTRAST rather than either side
+    of it. They are two different GAMES only because Snake cannot seat a second player
+    at all -- it is a grid, and a grid cannot be shared -- so the shared half has to
+    be played on the game that can be: Snakes, whose solo run goes to the browser on
+    exactly the same reasoning."""
     lobby = Lobby()
 
+    # No begin(): Snake seats one, so the session is FULL the moment it is made and
+    # the lobby deals it there and then -- the same rule that spares a 2048 player a
+    # Start button for a game they could never fill.
     alone = lobby.create("snake", ALICE)
-    lobby.begin(alone.id, ALICE)
+    assert alone.engine.started
     assert alone.engine.client_clock
 
-    together = lobby.create("snake", ALICE)
+    together = lobby.create("snakes", ALICE)
     lobby.join(together.id, BOB)
     lobby.begin(together.id, ALICE)
     assert not together.engine.client_clock
@@ -58,8 +67,7 @@ def test_the_seed_is_on_the_wire_because_the_browser_needs_it():
     # browser turns the handle is the lobby's business, exactly as the tick and the
     # tick rate are. A game that had to remember to announce it could forget.
     lobby = Lobby()
-    session = lobby.create("snake", ALICE)
-    lobby.begin(session.id, ALICE)
+    session = lobby.create("snake", ALICE)  # one seat: dealt on creation
     assert session.state(seat=0)["clientClock"] is True
     assert session.state(seat=0)["seed"] is not None
 
@@ -106,8 +114,7 @@ def test_a_browser_run_game_is_never_ticked_by_the_lobby_as_well():
 
     async def scenario():
         lobby = Lobby()
-        session = lobby.create("snake", ALICE)
-        lobby.begin(session.id, ALICE)
+        session = lobby.create("snake", ALICE)  # one seat: dealt on creation
 
         session.sockets.add((A, Watcher()))
         session.note_sockets_changed()

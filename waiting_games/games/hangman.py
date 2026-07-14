@@ -57,6 +57,7 @@ def normalise(raw: str) -> str:
 class Hangman(Game):
     key = "hangman"
     title = "Hangman"
+    category = "board"
     min_players = 2
     max_players = 6
 

@@ -20,7 +20,7 @@ from waiting_games.games.pong import (
     PADDLE_THICK,
     Pong,
 )
-from waiting_games.games.snake import HEIGHT, WIDTH, Snake
+from waiting_games.games.snake import WIDTH, Snake
 from waiting_games.lobby import Lobby, Player
 
 A, B, C = "u-alice", "u-bob", "u-carol"
@@ -45,25 +45,11 @@ def run(game, ticks, dt=None):
         game.tick(step)
 
 
-def staged(game):
-    """Let the engine look at a board that a test placed by hand.
-
-    A snake's next move is DECIDED a tick before it is made, and goes out with
-    the state -- which is what lets the browser draw the move while it happens
-    instead of a cell after it did. So a tick carries out the move worked out at
-    the end of the tick before, and a test that rewrites the board behind the
-    engine's back has to give it the chance to work one out for the board it now
-    actually has.
-
-    Nothing in a real game needs this. Cells only ever move because _execute
-    moved them, and _decide runs on the very same tick.
-    """
-    game._decide()
-    return game
-
-
 # ==========================================================================
-# Snake
+# Snake -- ONE snake. It is the Nokia game, it seats a single player, and the
+# tests that used to crash two of them into each other went with the rules that
+# allowed it: a grid cannot be shared (see snake.py). Snakes is the shared one,
+# and tests/test_snakes.py is where two bodies meet.
 # ==========================================================================
 
 
@@ -171,82 +157,24 @@ def test_eating_an_apple_makes_the_snake_longer():
     assert len(snake.cells) > length
 
 
-def test_the_last_snake_alive_wins():
-    game = seat(Snake)  # alice and bob
-    alice, bob = game.snakes
+def test_a_second_player_cannot_sit_down():
+    """The rule that took half this file's Snake tests with it, and it is a rule
+    about the WIRE rather than about snakes. On a grid the smallest error the network
+    can hand you is one whole CELL, and a cell is exactly the granularity that decides
+    whether you are alive -- so a shared grid is a game nobody can play, and a week
+    went into finding that out. Snakes left the grid in order to be shared.
 
-    # Steer bob into the wall and leave alice alone. Their rows differ, so alice
-    # is nowhere near the edge yet.
-    game.apply_move(B, {"dir": "up"})
-    run(game, HEIGHT)
+    One seat also means the board is dealt the moment the session is made: a full game
+    starts, and this one is full with the host in it. See lobby.create().
+    """
+    game = Snake()
+    game.add_player(A)
 
-    assert not bob.alive
-    assert alice.alive
-    assert game.over
-    assert game.winner == A
-
-
-def test_two_snakes_meeting_head_on_both_die():
-    """Everyone moves at once, so the snake that happens to be first in the list
-    must not win a collision it should have shared."""
-    game = seat(Snake)
-    alice, bob = game.snakes
-
-    # Face them at each other with an odd gap, so both heads land on the SAME
-    # cell. Real lengths: a snake never gets shorter than it starts.
-    alice.cells = [(10, 5), (9, 5), (8, 5)]
-    alice.heading = alice.pending = "right"
-    bob.cells = [(12, 5), (13, 5), (14, 5)]
-    bob.heading = bob.pending = "left"
-    game.apples = []
-
-    run(staged(game), 1)
-
-    assert not alice.alive
-    assert not bob.alive
-    assert game.over
-    assert game.winner is None  # a draw: nobody survived
+    with rejected("seat.full"):
+        game.add_player(B)
 
 
-def test_two_snakes_cannot_swap_places_through_each_other():
-    """An even gap: they do not meet on one cell, they try to pass through each
-    other. Each head lands where the other's head just was, which is a crash --
-    not a swap."""
-    game = seat(Snake)
-    alice, bob = game.snakes
-
-    alice.cells = [(10, 5), (9, 5), (8, 5)]
-    alice.heading = alice.pending = "right"
-    bob.cells = [(11, 5), (12, 5), (13, 5)]
-    bob.heading = bob.pending = "left"
-    game.apples = []
-
-    run(staged(game), 1)
-
-    assert not alice.alive
-    assert not bob.alive
-
-
-def test_a_snake_may_follow_a_tail_that_is_moving_out_of_the_way():
-    """The cell a tail is vacating this tick is free to move into -- unless its
-    owner is growing, in which case the tail stays put and it is a crash."""
-    game = seat(Snake)
-    alice, bob = game.snakes
-    game.apples = []
-
-    # Bob's tail is at (12,5) and about to move on. Alice's head is right behind.
-    bob.cells = [(14, 5), (13, 5), (12, 5)]
-    bob.heading = bob.pending = "right"
-    alice.cells = [(11, 5), (10, 5), (9, 5)]
-    alice.heading = alice.pending = "right"
-
-    run(staged(game), 1)
-
-    assert alice.alive  # she moved into a cell that was being vacated
-    assert alice.head == (12, 5)
-
-
-def test_solo_slange_never_declares_a_winner():
+def test_snake_never_declares_a_winner():
     game = seat(Snake, players=(A,))
     run(game, WIDTH + 5)
 
@@ -482,16 +410,15 @@ def test_a_real_time_game_gets_a_clock_and_a_turn_based_one_does_not():
         await lobby.launch(turn_based)
         assert turn_based.tick_task is None  # no clock: it only moves when you do
 
-        # Solo Snake is played in the BROWSER and checked here, so it is given no
-        # clock at all -- see RealTimeGame.client_clock. Two snakes have a collision
-        # to arbitrate, so the server keeps the handle.
-        solo = lobby.create("snake", ALICE)
-        lobby.begin(solo.id, ALICE)
+        # Snake is played in the BROWSER and checked here, so it is given no clock at
+        # all -- see RealTimeGame.client_clock. Two snakes have a collision to
+        # arbitrate, so the server keeps the handle.
+        solo = lobby.create("snake", ALICE)  # one seat: dealt on creation
         await lobby.launch(solo)
         assert solo.engine.client_clock
         assert solo.tick_task is None, "a browser-run game must not be simulated twice"
 
-        realtime = lobby.create("snake", ALICE)
+        realtime = lobby.create("snakes", ALICE)
         lobby.join(realtime.id, BOB)  # ...and now there is somebody to disagree with
         lobby.begin(realtime.id, ALICE)
         await lobby.launch(realtime)
@@ -511,7 +438,7 @@ def test_an_empty_room_parks_the_clock():
 
     async def scenario():
         lobby = Lobby()
-        session = lobby.create("snake", ALICE)
+        session = lobby.create("snakes", ALICE)
         lobby.join(session.id, BOB)  # two snakes: the SERVER clocks this one
         lobby.begin(session.id, ALICE)
         await lobby.launch(session)
@@ -519,9 +446,14 @@ def test_an_empty_room_parks_the_clock():
         # Nobody has ever opened a socket, so the clock is parked from the start.
         assert not session.watchers.is_set()
 
-        head = session.engine.snakes[0].head
+        # COPIED, not aliased: a Snakes head is a live list, and holding the same
+        # list the engine is moving would make this assertion true no matter what
+        # the clock did.
+        head = list(session.engine.snakes[0].head)
         await asyncio.sleep(0.4)  # several ticks' worth of wall-clock
-        assert session.engine.snakes[0].head == head, "it ticked into an empty room"
+        assert list(session.engine.snakes[0].head) == head, (
+            "it ticked into an empty room"
+        )
 
         # Someone looks: the clock starts, and frames start arriving.
         watcher = Watcher()
@@ -556,7 +488,7 @@ def test_one_slow_player_does_not_freeze_the_room():
 
     async def scenario():
         lobby = Lobby()
-        session = lobby.create("snake", ALICE)
+        session = lobby.create("snakes", ALICE)
         lobby.join(session.id, BOB)  # 2 of 6, so the host starts it
         lobby.begin(session.id, ALICE)
         await lobby.launch(session)
@@ -566,8 +498,8 @@ def test_one_slow_player_does_not_freeze_the_room():
         session.sockets.add((B, healthy))
         session.note_sockets_changed()
 
-        # Measured in TICKS, not seconds. Snake's tick rate is its difficulty and
-        # is tuned when players say so -- it has already been slowed once -- and a
+        # Measured in TICKS, not seconds. The tick rate IS the difficulty and gets
+        # tuned when players say so -- Snake has already been slowed once -- and a
         # test that hardcodes the wall-clock equivalent is one that fails the day
         # somebody does, with a message about frames that says nothing about speed.
         await asyncio.sleep(6 / session.engine.tick_hz)
@@ -610,7 +542,7 @@ def test_a_real_time_state_says_which_tick_it_is():
 
     async def scenario():
         lobby = Lobby()
-        session = lobby.create("snake", ALICE)
+        session = lobby.create("snakes", ALICE)
         lobby.join(session.id, BOB)  # two snakes: the SERVER clocks this one
         lobby.begin(session.id, ALICE)
 

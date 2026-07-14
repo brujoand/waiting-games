@@ -18,6 +18,7 @@ MARKS = ("X", "O")
 class TicTacToe(Game):
     key = "tictactoe"
     title = "Tic-Tac-Toe"
+    category = "board"
     min_players = 2
     max_players = 2
 

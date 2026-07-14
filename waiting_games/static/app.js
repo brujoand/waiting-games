@@ -22,12 +22,18 @@ const state = {
   sessions: [],
   game: null, // the current game's state, when we are in one
 
-  // The lobby's two filters. Both live here rather than in the dom, because the
-  // lobby list repaints on every session anybody anywhere starts -- and a picker
-  // that forgot what you had chosen every time a stranger opened a game would be
-  // unusable.
-  alone: false, // solo, or with other people
-  pick: null, // the game key the picker is showing
+  // The lobby's filters: two axes, each a set, and both EMPTY to begin with. Empty
+  // means no opinion, so the list starts as the whole catalogue and a filter only
+  // ever takes games out of it. That is the opposite of the <select> this replaced,
+  // which showed one game at a time and hid the other eleven inside a menu you had
+  // to open before you could find out what was in it.
+  //
+  // They live here rather than in the dom because the lobby repaints on every
+  // session anybody anywhere starts, and a filter that forgot itself every time a
+  // stranger opened a game would be unusable.
+  modes: new Set(), // "solo" and/or "group"
+  categories: new Set(), // the shelf: "cards", "board", "arcade"
+  pick: null, // the game key the list has selected
 };
 
 let lobbySocket = null;
@@ -320,15 +326,26 @@ function renderWhoami() {
 
 // -- lobby screen -----------------------------------------------------------
 
-// Which games the toggle is currently showing.
-//
-// Not a partition, and it must not be made into one. A game is on the solo list
-// if it CAN be played alone and on the other one if it CAN be played with other
-// people, and Snake (1-6 players) is honestly both -- so it appears on both.
-// 2048 seats exactly one, Tic-Tac-Toe needs two, and only those two lists are
-// disjoint by accident.
-function playable(game) {
-  return state.alone ? game.minPlayers === 1 : game.maxPlayers > 1;
+// Who you can play a game with. NOT a partition, and it must not be made into one:
+// a game is solo if it CAN be played alone and group if it CAN be played with other
+// people, and Snakes (1-6 players) is honestly both -- so it shows under either.
+// Snake seats exactly one and Tic-Tac-Toe needs two, and those are disjoint only by
+// accident.
+// Group first: it is the ordinary case, and it is the order the segmented pair this
+// replaced read in. Object.keys order IS the chip order.
+const MODES = {
+  group: (game) => game.maxPlayers > 1,
+  solo: (game) => game.minPlayers === 1,
+};
+
+// Within an axis the chips are an OR: picking Cards and Board shows both shelves.
+// Across the two axes they are an AND: Board + Solo means a board game you can play
+// on your own. An axis with nothing chosen has no opinion and excludes nothing.
+function matches(game) {
+  const byMode =
+    !state.modes.size || [...state.modes].some((mode) => MODES[mode](game));
+  const byCategory = !state.categories.size || state.categories.has(game.category);
+  return byMode && byCategory;
 }
 
 // "2-4 players", "2 players" -- and its own string for the one-seat game, because
@@ -342,29 +359,10 @@ function seats(game) {
 }
 
 function renderHome() {
-  const games = state.games.filter(playable);
+  const games = state.games.filter(matches);
   if (!games.some((game) => game.key === state.pick)) {
-    state.pick = games[0]?.key ?? null; // the toggle moved out from under it
+    state.pick = games[0]?.key ?? null; // a filter moved out from under it
   }
-
-  const picker = el("select", { id: "game-picker" });
-  for (const game of games) {
-    picker.append(
-      el("option", {
-        value: game.key,
-        // The server's `title` is English and must never be rendered; the game is
-        // named here, from its key, in the player's own language.
-        textContent: t("ui.game_with_players", {
-          game: gameTitle(game.key),
-          players: seats(game),
-        }),
-      }),
-    );
-  }
-  picker.value = state.pick ?? "";
-  picker.onchange = () => {
-    state.pick = picker.value;
-  };
 
   const start = el("button", { className: "primary", textContent: t("ui.start_game") });
   start.disabled = state.pick === null;
@@ -383,8 +381,11 @@ function renderHome() {
   appEl.replaceChildren(
     el("section", { className: "panel" }, [
       el("h2", { textContent: t("ui.new_game") }),
-      renderModes(),
-      el("div", { className: "row" }, [picker, start]),
+      renderFilters(),
+      games.length
+        ? el("ul", { className: "games" }, games.map(renderGameRow))
+        : el("p", { className: "empty", textContent: t("ui.no_games_match") }),
+      el("div", { className: "row" }, [start]),
     ]),
     el("section", { className: "panel" }, [
       el("h2", { textContent: t("ui.join_a_game") }),
@@ -398,28 +399,72 @@ function renderHome() {
   );
 }
 
-// Solo or together, above the picker. Two buttons rather than a second <select>:
-// there are two answers, it is the first thing you decide, and a menu you have to
-// open to see two options in is a menu that hides them.
-function renderModes() {
-  const modes = [
-    { alone: false, label: t("ui.together") },
-    { alone: true, label: t("ui.alone") },
-  ];
+// Two rows of chips above the list: who with, and what kind of game. Each chip is a
+// toggle, and the list below reacts -- so the filter and the thing it filters are on
+// screen together and you can see what a chip did.
+function renderFilters() {
+  // The shelves come from the CATALOGUE, in the order the server lists them. The
+  // browser knows no category by name: a new shelf appears here the day a game
+  // declares it, and the only thing it needs is a string to be called by.
+  const shelves = [...new Set(state.games.map((game) => game.category))];
 
+  const clear = el("button", { className: "link", textContent: t("ui.clear_filters") });
+  clear.hidden = !state.modes.size && !state.categories.size;
+  clear.onclick = () => {
+    state.modes.clear();
+    state.categories.clear();
+    renderHome();
+  };
+
+  return el("div", { className: "filters" }, [
+    chips(state.modes, Object.keys(MODES), (mode) =>
+      t(mode === "solo" ? "ui.alone" : "ui.together"),
+    ),
+    chips(state.categories, shelves, (shelf) => t(`ui.category.${shelf}`)),
+    clear,
+  ]);
+}
+
+// One axis of the filter. `chosen` is the live Set out of state, so a chip toggles
+// membership in it and the repaint reads it straight back.
+function chips(chosen, values, label) {
   return el(
     "div",
-    { className: "modes" },
-    modes.map(({ alone, label }) => {
-      const button = el("button", { className: "mode", textContent: label });
-      button.dataset.on = String(state.alone === alone);
-      button.onclick = () => {
-        state.alone = alone;
+    { className: "chips" },
+    values.map((value) => {
+      const chip = el("button", { className: "chip", textContent: label(value) });
+      chip.dataset.on = String(chosen.has(value));
+      chip.onclick = () => {
+        if (chosen.has(value)) chosen.delete(value);
+        else chosen.add(value);
         renderHome();
       };
-      return button;
+      return chip;
     }),
   );
+}
+
+// A game in the list: what it is called, who can play it, and which shelf it came
+// off -- the last of those being how you learn what the chips above actually mean.
+function renderGameRow(game) {
+  const row = el("button", { className: "game" }, [
+    // The server's `title` is English and must never be rendered; the game is named
+    // here, from its key, in the player's own language.
+    el("strong", { textContent: gameTitle(game.key) }),
+    el("span", { className: "meta", textContent: seats(game) }),
+    el("span", {
+      className: "shelf",
+      textContent: t(`ui.category.${game.category}`),
+    }),
+  ]);
+
+  row.dataset.on = String(game.key === state.pick);
+  row.onclick = () => {
+    state.pick = game.key;
+    renderHome();
+  };
+
+  return el("li", {}, [row]);
 }
 
 function renderSessionRow(session) {

@@ -75,6 +75,7 @@ def deck() -> list[Card]:
 class Idiot(Game):
     key = "idiot"
     title = "Idiot"
+    category = "cards"
     min_players = 2
     max_players = 5
 
