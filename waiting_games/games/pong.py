@@ -61,6 +61,7 @@ class Paddle:
 class Pong(RealTimeGame):
     key = "pong"
     title = "Pong"
+    category = "arcade"
     min_players = 2
     max_players = 4
     tick_hz = 30.0

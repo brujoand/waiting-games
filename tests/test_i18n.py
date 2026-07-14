@@ -13,7 +13,7 @@ import re
 
 import pytest
 
-from waiting_games.games import GAMES
+from waiting_games.games import CATEGORIES, GAMES
 from waiting_games.lobby import RESERVED_KEYS
 
 SOURCE = pathlib.Path(__file__).parent.parent / "waiting_games"
@@ -95,6 +95,43 @@ def test_every_code_the_server_can_raise_has_an_english_string():
     )
 
     assert not missing, f"no English string for: {missing}"
+
+
+LANGUAGES = ("en", "nb")
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_every_game_in_the_catalogue_has_a_title(language):
+    """The lobby names a game from its KEY -- gameTitle() is t(`game.${key}.title`)
+    -- so a game the dictionary has never heard of is offered to the player as the
+    literal text `game.snakes.title`. Which is exactly what the picker said, in both
+    languages, for as long as Snakes had been playable.
+
+    The parity test could not catch it: that one checks nb against en, and en was
+    missing it too. Nothing checked either dictionary against the CATALOGUE, which is
+    the thing the lobby actually renders.
+    """
+    words = dictionary(language)
+    missing = sorted(
+        f"game.{key}.title" for key in GAMES if f"game.{key}.title" not in words
+    )
+
+    assert not missing, f"no {language} title for: {missing}"
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_every_shelf_the_lobby_filters_by_has_a_name(language):
+    """Same failure, one level up: the filter's chips are named from CATEGORIES the
+    way a game is named from its key, so a shelf with no string is a chip that says
+    `ui.category.cards`."""
+    words = dictionary(language)
+    missing = sorted(
+        f"ui.category.{shelf}"
+        for shelf in CATEGORIES
+        if f"ui.category.{shelf}" not in words
+    )
+
+    assert not missing, f"no {language} name for: {missing}"
 
 
 def test_norwegian_says_everything_english_does():

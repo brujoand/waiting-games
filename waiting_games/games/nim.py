@@ -10,6 +10,7 @@ STARTING_PILES = (3, 5, 7)
 class Nim(Game):
     key = "nim"
     title = "Nim"
+    category = "board"
     min_players = 2
     max_players = 2
 

@@ -60,6 +60,10 @@ class Game(ABC):
 
     key: str
     title: str  # this is what the lobby shows
+    # Which shelf the lobby files this game on: one of games.CATEGORIES. The lobby's
+    # filter is built from what the catalogue declares, so a new game picks a shelf
+    # and appears under it -- nothing in the frontend learns its name.
+    category: str
     min_players: int
     max_players: int
 

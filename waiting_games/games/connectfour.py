@@ -15,6 +15,7 @@ DIRECTIONS = ((0, 1), (1, 0), (1, 1), (1, -1))
 class ConnectFour(Game):
     key = "connectfour"
     title = "Connect Four"
+    category = "board"
     min_players = 2
     max_players = 2
 

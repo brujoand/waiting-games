@@ -27,6 +27,7 @@ DIRECTIONS = (
 class Othello(Game):
     key = "othello"
     title = "Othello"
+    category = "board"
     min_players = 2
     max_players = 2
 

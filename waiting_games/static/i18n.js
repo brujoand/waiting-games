@@ -33,7 +33,13 @@ const en = {
   "ui.players_one": "1 player",
   "ui.players_exact": "{max} players",
   "ui.players_range": "{min}-{max} players",
-  "ui.game_with_players": "{game} ({players})",
+
+  // -- the lobby's filters
+  "ui.no_games_match": "No games match. Clear a filter.",
+  "ui.clear_filters": "Clear filters",
+  "ui.category.cards": "Cards",
+  "ui.category.board": "Board",
+  "ui.category.arcade": "Arcade",
 
   // -- lobby rows
   "ui.status.waiting": "waiting",
@@ -99,6 +105,7 @@ const en = {
   "game.gris.title": "Gris",
   "game.idiot.title": "Idiot",
   "game.snake.title": "Snake",
+  "game.snakes.title": "Snakes",
   "game.pong.title": "Pong",
   "game.twentyfortyeight.title": "2048",
 
@@ -250,14 +257,11 @@ const en = {
   "snake.dead": "Your snake is dead.",
   "snake.no_reverse": "You cannot reverse straight into yourself.",
   "snake.solo_over": "You survived {seconds} seconds and grew to {length}.",
-  "snake.all_crashed": "Everyone crashed. A draw.",
-  "snake.you_survived": "You are the last snake alive! Length {length}.",
   "snake.length": "Length {length}",
   "snake.you_crashed": "You crashed",
   "snake.watching": "You are watching",
   "snake.hint": "Swipe, or use the arrow keys.",
   "snake.solo_over_watched": "The snake lasted {seconds} seconds.",
-  "snake.status": "{you}. {alive} snakes alive.",
   "snakes.unknown_direction": "Unknown direction.",
   "snakes.dead": "Your snake is dead.",
   "snakes.no_reverse": "You cannot turn straight back on yourself.",
@@ -312,7 +316,13 @@ const nb = {
   "ui.players_one": "1 spiller",
   "ui.players_exact": "{max} spillere",
   "ui.players_range": "{min}-{max} spillere",
-  "ui.game_with_players": "{game} ({players})",
+
+  // -- the lobby's filters
+  "ui.no_games_match": "Ingen spill passer. Fjern et filter.",
+  "ui.clear_filters": "Nullstill filtre",
+  "ui.category.cards": "Kortspill",
+  "ui.category.board": "Brettspill",
+  "ui.category.arcade": "Arkade",
 
   // -- lobby rows
   "ui.status.waiting": "venter",
@@ -376,6 +386,7 @@ const nb = {
   "game.gris.title": "Gris",
   "game.idiot.title": "Idiot",
   "game.snake.title": "Slange",
+  "game.snakes.title": "Slanger",
   "game.pong.title": "Pong",
   "game.twentyfortyeight.title": "2048",
 
@@ -517,14 +528,11 @@ const nb = {
   "snake.dead": "Slangen din er død.",
   "snake.no_reverse": "Du kan ikke snu rett rundt.",
   "snake.solo_over": "Du overlevde {seconds} sekunder og ble {length} lang.",
-  "snake.all_crashed": "Alle krasjet. Uavgjort.",
-  "snake.you_survived": "Du er den siste slangen i live! Lengde {length}.",
   "snake.length": "Lengde {length}",
   "snake.you_crashed": "Du krasjet",
   "snake.watching": "Du ser på",
   "snake.hint": "Sveip, eller bruk piltastene.",
   "snake.solo_over_watched": "Slangen holdt ut i {seconds} sekunder.",
-  "snake.status": "{you}. {alive} slanger i live.",
   "snakes.unknown_direction": "Ukjent retning.",
   "snakes.dead": "Slangen din er død.",
   "snakes.no_reverse": "Du kan ikke snu rett rundt.",

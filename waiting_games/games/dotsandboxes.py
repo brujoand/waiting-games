@@ -20,6 +20,7 @@ DOTS = BOXES + 1
 class DotsAndBoxes(Game):
     key = "dotsandboxes"
     title = "Dots and Boxes"
+    category = "board"
     min_players = 2
     max_players = 4
 
