@@ -45,6 +45,7 @@ RESERVED_KEYS = frozenset(
         "winner",
         "draw",
         "connected",
+        "sessionRound",
         "tick",
         "tickHz",
     }
@@ -60,6 +61,14 @@ class Session:
     players: dict[str, Player] = field(default_factory=dict)
     created_at: float = field(default_factory=time.monotonic)
     finished_at: float | None = None
+
+    # Which round of this session is being played. A rematch keeps the session --
+    # same id, same people, same url, same sockets -- and swaps the engine, so the
+    # id alone no longer identifies a BOARD. The browser needs to be able to tell
+    # that the thing in front of it has been replaced: it mounts a renderer once
+    # per round and throws its confetti once per round, and both of those would
+    # otherwise still be looking at the last one.
+    round: int = 1
     lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     sockets: set = field(default_factory=set)
 
@@ -89,6 +98,12 @@ class Session:
             # `game` (its key) in the player's own language. Shipping a field the
             # client is forbidden to render is a trap someone eventually springs.
             "status": self.status,
+            # `sessionRound`, not `round`: Hangman already has a round of its own
+            # -- whose word it is -- and a game's view() is merged OVER these, so
+            # taking the plain name would have let it silently clobber the
+            # platform's. RESERVED_KEYS is what says so, and the test that reads it
+            # is what caught this.
+            "sessionRound": self.round,
             "host": self.players[self.host].name if self.host in self.players else "?",
             # A display name is not an identity: the client needs the sub to know
             # whether to show itself a Start button.
@@ -215,6 +230,53 @@ class Lobby:
         session = self.require(session_id)
         if session.host != player.sub:
             raise InvalidMove("lobby.not_host")
+        self._start(session)
+        return session
+
+    def rematch(self, session_id: str, player: Player) -> Session:
+        """Same game, same people, same session: one more round.
+
+        A NEW engine, not a reset one. `base.Game` says an engine is a single
+        round -- it has an `over` and a `winner` and it deals its board exactly
+        once -- so asking every game on the platform to be able to un-play itself
+        would be a new method on the contract, and the one game that forgot to
+        clear one field would be quietly broken in a way only a player would ever
+        find. Throwing the round away instead cannot be got wrong, and no game has
+        to know that rematches exist.
+
+        Any SEATED player may call it, not just the host. The game is over, so
+        there is nothing left to protect from them -- and the person who most
+        wants another go is usually the one who just lost. Spectators do not get
+        to restart other people's games.
+        """
+        session = self.require(session_id)
+        if player.sub not in session.players:
+            raise InvalidMove("lobby.not_playing")
+        if not session.engine.over:
+            raise InvalidMove("lobby.not_over")
+
+        engine = GAMES[session.game_key]()
+        # Insertion order is the order they sat down in, so everybody keeps the
+        # seat -- and with it the colour, and the wall -- they had last round.
+        for sub in session.players:
+            engine.add_player(sub)
+
+        # The old clock breaks out of its loop the moment the game ends, but it
+        # then AWAITS a final broadcast on the way out, so it may still be
+        # unwinding. Cancel it and let go of it here: launch() only gives the
+        # session a clock if it does not already have one, and the corpse of the
+        # last round's clock is not one.
+        if session.tick_task is not None:
+            session.tick_task.cancel()
+            session.tick_task = None
+
+        session.engine = engine
+        session.finished_at = None  # not finished any more; the reaper must forget
+        session.round += 1
+
+        # This roster has already started a game once, so it can start another --
+        # and a rematch that made you press Start again would be a button that
+        # asks whether you meant the button you just pressed.
         self._start(session)
         return session
 
@@ -391,7 +453,18 @@ class Lobby:
             await self.broadcast_state(session)
             await self.broadcast_lobby()
         finally:
-            session.tick_task = None
+            # Only if we are STILL the session's clock.
+            #
+            # A rematch cancels this task and launches the next round's clock
+            # immediately, and a cancelled task does not run its finally until the
+            # loop gets back to it -- by which point the handle belongs to somebody
+            # else. Clearing it unconditionally would therefore null out the new
+            # clock's handle while it happily ticked on, and the NEXT rematch would
+            # find no clock to cancel and start a second one beside it. Two clocks,
+            # one engine: the game runs at double speed and nothing in the code
+            # says why.
+            if session.tick_task is asyncio.current_task():
+                session.tick_task = None
 
     # -- reaping ---------------------------------------------------------
 

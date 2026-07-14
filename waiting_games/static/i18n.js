@@ -22,6 +22,7 @@ const en = {
   "ui.alone": "On your own",
   "ui.start_game": "Start game",
   "ui.start_now": "Start now",
+  "ui.rematch": "Rematch",
   "ui.join_a_game": "Join a game",
   "ui.join": "Join",
   "ui.watch": "Watch",
@@ -75,6 +76,8 @@ const en = {
   "lobby.unknown_game": "Unknown game: {game}.",
   "lobby.too_many_games": "Too many games in progress. Try again later.",
   "lobby.not_host": "Only the host can do that.",
+  "lobby.not_playing": "Only someone who played can ask for a rematch.",
+  "lobby.not_over": "That game is not over yet.",
   "lobby.game_closed": "The host closed this game.",
 
   "name.not_text": "A name must be text.",
@@ -203,6 +206,7 @@ const nb = {
   "ui.alone": "Alene",
   "ui.start_game": "Start spill",
   "ui.start_now": "Start nå",
+  "ui.rematch": "Omkamp",
   "ui.join_a_game": "Bli med i et spill",
   "ui.join": "Bli med",
   "ui.watch": "Se på",
@@ -256,6 +260,8 @@ const nb = {
   "lobby.unknown_game": "Ukjent spill: {game}.",
   "lobby.too_many_games": "For mange spill i gang. Prøv igjen senere.",
   "lobby.not_host": "Bare verten kan gjøre det.",
+  "lobby.not_playing": "Bare de som spilte kan be om omkamp.",
+  "lobby.not_over": "Det spillet er ikke ferdig ennå.",
   "lobby.game_closed": "Verten avsluttet spillet.",
 
   "name.not_text": "Navnet må være tekst.",

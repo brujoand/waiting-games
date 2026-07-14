@@ -38,18 +38,33 @@ let heartbeat = null;
 // from (which may export its own status line), and the chrome around it.
 let renderer = null;
 let gameModule = null;
-let mountedId = null;
+let mountedRound = null;
 let statusEl = null;
 let startButtonEl = null;
+let rematchButtonEl = null;
 let boardEl = null;
 // The board's <h2>. mountGame() sets it ONCE, so without a handle it would keep
 // the old language after a switch -- the one place the repaint is easy to miss.
 let titleEl = null;
 
-// The game we have already thrown confetti at. A finished game keeps pushing
+// The round we have already thrown confetti at. A finished game keeps pushing
 // state -- a real-time one does so several times a second -- so without this the
 // fanfare would fire on every frame for as long as the winner sat on the page.
-let celebratedId = null;
+let celebratedRound = null;
+
+// A ROUND, not a game: a rematch replays the same session, so the same id is
+// about to show a different board.
+//
+// Both of the once-per-board things hang off this. The renderer is mounted once
+// per round, which is what hands a real-time game a clean slate -- Snake's
+// interpolation buffer keys on the server's tick index, the new engine starts
+// counting from zero again, and a buffer carried over from the last round would
+// dismiss every state of this one as stale and freeze the snake solid. And the
+// confetti is claimed once per round, so the next win is celebrated rather than
+// swallowed as one we had already cheered.
+function roundKey(game) {
+  return `${game.id}#${game.sessionRound}`;
+}
 
 // -- helpers ----------------------------------------------------------------
 
@@ -435,12 +450,13 @@ function unmountGame() {
   if (renderer) renderer.destroy();
   renderer = null;
   gameModule = null;
-  mountedId = null;
+  mountedRound = null;
   statusEl = null;
   startButtonEl = null;
+  rematchButtonEl = null;
   boardEl = null;
   titleEl = null;
-  celebratedId = null;
+  celebratedRound = null;
 }
 
 // mountGame() awaits a dynamic import, so two state pushes arriving back to back
@@ -454,7 +470,9 @@ async function renderGame() {
 
   if (mounting) await mounting;
 
-  if (mountedId !== game.id) {
+  // A rematch changes the round, not the id, and the board it hands back is a new
+  // one -- so this remounts, exactly as arriving at a different game does.
+  if (mountedRound !== roundKey(game)) {
     unmountGame();
     mounting = mountGame(game);
     try {
@@ -464,18 +482,20 @@ async function renderGame() {
     }
   }
 
-  // Whether the host may start is state-dependent, so re-evaluate every push.
+  // Whether the host may start, and whether there is anything to replay, are both
+  // state-dependent -- so re-evaluate them on every push.
   startButtonEl.hidden = !mayStart(game);
+  rematchButtonEl.hidden = !mayRematch(game);
   titleEl.textContent = gameTitle(game.game);
   statusEl.textContent = describeGame(game);
   renderer.update(game);
 
   // The TRANSITION into game-over, not the state of being over. mountGame() has
-  // already claimed the id if the game was finished when we arrived, so a reload
-  // on the results page is silent -- as it should be. Nobody wants a trumpet for
-  // a game they lost ten minutes ago.
-  if (game.over && celebratedId !== game.id) {
-    celebratedId = game.id;
+  // already claimed the round if the game was finished when we arrived, so a
+  // reload on the results page is silent -- as it should be. Nobody wants a
+  // trumpet for a game they lost ten minutes ago.
+  if (game.over && celebratedRound !== roundKey(game)) {
+    celebratedRound = roundKey(game);
     celebrate(outcomeOf(game), boardEl);
   }
 }
@@ -499,6 +519,13 @@ function mayStart(game) {
   return game.status === "waiting" && game.hostSub === state.me.sub && game.canStart;
 }
 
+// Anyone who PLAYED may ask for another round -- the server agrees, and it is
+// usually the loser who wants one. Seat 0 is a real seat and is also falsy, so
+// this cannot be `!game.seat`; a spectator's seat is null, and they only watch.
+function mayRematch(game) {
+  return game.over && game.seat !== null && game.seat !== undefined;
+}
+
 async function mountGame(game) {
   const board = el("div", { id: "board" });
   boardEl = board;
@@ -507,14 +534,30 @@ async function mountGame(game) {
 
   // Arriving at a game that is ALREADY finished -- a reload on the results page,
   // or following a link to somebody's last move -- is not a thing to celebrate.
-  // Claiming the id here is what makes renderGame() fire on the transition only.
-  if (game.over) celebratedId = game.id;
+  // Claiming the round here is what makes renderGame() fire on the transition
+  // only.
+  if (game.over) celebratedRound = roundKey(game);
 
   startButtonEl = el("button", { className: "primary", textContent: t("ui.start_now") });
   startButtonEl.onclick = async () => {
     try {
       await api(`/api/sessions/${game.id}/start`, { method: "POST" });
     } catch (error) {
+      toast(error.message);
+    }
+  };
+
+  rematchButtonEl = el("button", { className: "primary", textContent: t("ui.rematch") });
+  rematchButtonEl.onclick = async () => {
+    // Disabled for the round trip. Two clicks would be two rematches, and the
+    // second one lands on a game that has already started over -- so the server
+    // refuses it, and the player gets an error for having been keen. The state
+    // push that starts the next round remounts this button anyway.
+    rematchButtonEl.disabled = true;
+    try {
+      await api(`/api/sessions/${game.id}/rematch`, { method: "POST" });
+    } catch (error) {
+      rematchButtonEl.disabled = false;
       toast(error.message);
     }
   };
@@ -530,6 +573,7 @@ async function mountGame(game) {
       board,
       el("div", { className: "row" }, [
         startButtonEl,
+        rematchButtonEl,
         el("button", { textContent: t("ui.back_to_lobby"), onclick: () => go("#/") }),
       ]),
     ]),
@@ -538,7 +582,7 @@ async function mountGame(game) {
   // Each game ships its own renderer; the platform only knows the game's key.
   gameModule = await import(`/static/games/${game.game}.js`);
   renderer = gameModule.create({ root: board, me: state.me, send: sendMove });
-  mountedId = game.id;
+  mountedRound = roundKey(game);
 }
 
 function describeGame(game) {
