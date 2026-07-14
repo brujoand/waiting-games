@@ -710,8 +710,7 @@ button:disabled {
 .t48-tile {
   display: grid;
   place-items: center;
-  position: relative; /* the +points float hangs off this */
-  z-index: 1; /* ...and every tile stands on the squares, not among them */
+  z-index: 1; /* every tile stands ON the squares, not among them */
   border-radius: 4px;
   background: #eee4da;
   color: #776e65;
@@ -773,22 +772,52 @@ button:disabled {
 
 /* The three things that can happen to a tile, and they must not look alike.
    Sliding is the trip itself, animated in js off the server's account of the move.
-   The other two are what a player has to read at the END of that trip:
+   The other two are what a player reads at the END of that trip, and they are given
+   the time to be read: a merge and a spawn flashing past in a tenth of a second are
+   two events you know happened and cannot tell apart.
+
+   MERGING is two tiles becoming one, and it is the loudest thing on the board,
+   because it is the only thing that scored. The survivor swells well past its own
+   size before settling -- big enough that it is the merge you look at, even when
+   half the board moved.
 
    ARRIVING is the free tile. It was not there and now it is, so it fades up out of
-   nothing -- it never travelled, and must not look as though it did.
+   nothing: it never travelled, and must not look as though it did. It waits for the
+   merge to finish swelling before it does, so the two never compete for the eye --
+   the move first, and only then the board's answer to it. */
+.t48-merge {
+  /* It swells past its own square and over its neighbours, and which of them wins
+     is otherwise decided by the order the tiles happen to sit in the dom -- so a
+     merge against the left wall would rise over the board and the same merge one
+     square along would be half-buried under the tile beside it. It rises. */
+  z-index: 2;
+  animation: t48-merge 0.26s ease-out;
+}
 
-   MERGING is two tiles becoming one. They slide together and the survivor swells
-   past its own size before settling, which is the only moment on the board with
-   any weight to it: it is the move that scored. */
+@keyframes t48-merge {
+  from {
+    transform: scale(0.86);
+  }
+
+  55% {
+    transform: scale(1.28);
+  }
+
+  to {
+    transform: scale(1);
+  }
+}
+
 .t48-arrive {
-  animation: t48-arrive 0.14s ease-out;
+  /* `backwards` is load-bearing: without it the tile sits at full opacity through
+     the delay and then fades in from nothing, which is a flicker, not an arrival. */
+  animation: t48-arrive 0.22s ease-out 0.14s backwards;
 }
 
 @keyframes t48-arrive {
   from {
     opacity: 0;
-    transform: scale(0.4);
+    transform: scale(0.3);
   }
 
   to {
@@ -797,64 +826,13 @@ button:disabled {
   }
 }
 
-.t48-merge {
-  animation: t48-merge 0.16s ease-out;
-}
-
-@keyframes t48-merge {
-  from {
-    transform: scale(0.9);
-  }
-
-  55% {
-    transform: scale(1.16);
-  }
-
-  to {
-    transform: scale(1);
-  }
-}
-
-/* What the merge paid, leaving the tile that earned it. It drifts up off the tile
-   and over whatever is behind it -- the board, a neighbour, any colour in the ramp
-   -- so it carries its own contrast rather than trusting the one background it
-   happened to start on. */
-.t48-gain {
-  position: absolute;
-  top: -0.2em;
-  right: -0.1em;
-  color: #776e65;
-  font-size: 0.55em;
-  font-weight: 700;
-  text-shadow: 0 0 3px rgba(249, 246, 242, 0.9);
-  pointer-events: none;
-  animation: t48-gain 0.6s ease-out forwards;
-}
-
-@keyframes t48-gain {
-  from {
-    opacity: 0.9;
-    transform: translateY(0);
-  }
-
-  to {
-    opacity: 0;
-    transform: translateY(-1.2em);
-  }
-}
-
 /* The board still has to be READABLE without any of it -- so the tiles stop
    moving, they do not stop existing. js skips the slide for the same reason; this
    is what catches the css half. */
 @media (prefers-reduced-motion: reduce) {
   .t48-arrive,
-  .t48-merge,
-  .t48-gain {
+  .t48-merge {
     animation: none;
-  }
-
-  .t48-gain {
-    display: none;
   }
 }
 
