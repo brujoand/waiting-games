@@ -41,7 +41,8 @@
 // packet that is a millisecond late starves the buffer.
 //
 // So carry half a tick of slack on top. That is not a guess: it is what the
-// measurements said kills ordinary wifi jitter outright, and it costs 62ms.
+// measurements said kills ordinary wifi jitter outright, and it costs half a
+// tick -- 83ms at Snake's 6 Hz.
 //
 // It is also less slack than the field carries. Valve's cl_interp defaults to
 // TWO send intervals ("even if one snapshot is lost, there are always two valid

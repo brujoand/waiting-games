@@ -4,7 +4,7 @@
 // four directions, so it takes the same keys() and swipe(). It just skips
 // onChange(), which is the piece that is specific to a game with a heading.
 //
-// A canvas game must NOT redraw from the state push. The server ticks at 8-30 Hz;
+// A canvas game must NOT redraw from the state push. The server ticks at 6-30 Hz;
 // the browser paints at 60. Painting from a requestAnimationFrame loop that reads
 // the latest frame decouples the two, so a dropped or late frame is a smooth
 // stall rather than a stutter.
@@ -60,7 +60,7 @@ export function canvas(root, paint) {
 // How to steer. Mounted ONCE, under the board, and never touched again.
 //
 // This used to be tacked onto the end of the status line, which a real-time game
-// rewrites 8-30 times a second. A sentence that never changes, reprinted next to
+// rewrites 6-30 times a second. A sentence that never changes, reprinted next to
 // numbers that do, is what made those screens feel noisy: the eye keeps being
 // pulled back to re-read something it already knows. Say it once, and leave the
 // live line to carry only what is actually live.

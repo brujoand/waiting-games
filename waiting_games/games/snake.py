@@ -46,7 +46,15 @@ class Snake(RealTimeGame):
     title = "Snake"
     min_players = 1
     max_players = 6
-    tick_hz = 8.0  # the snake moves one cell per tick, so this IS the speed
+    # The snake moves one cell per tick, so this IS the speed -- there is no
+    # separate difficulty knob, and there must not be one. It was 8 Hz, which
+    # players found too fast to steer: a 24-cell board crossed in three seconds
+    # leaves about a sixth of a second to see a wall coming and do something
+    # about it. 6 Hz gives you a third.
+    #
+    # It is on the wire (public_state), and the renderer slides the snake across
+    # exactly this interval, so tuning it here is the whole change.
+    tick_hz = 6.0
 
     def __init__(self) -> None:
         super().__init__()
@@ -195,7 +203,7 @@ class Snake(RealTimeGame):
             "height": HEIGHT,
             "apples": [list(apple) for apple in self.apples],
             # `seconds` is the SCORE, not a clock to animate against: it is rounded
-            # to a tenth, and at 8 Hz a tenth cannot tell one tick from two. The
+            # to a tenth, and at these rates a tenth cannot tell one tick from two. The
             # renderer uses the platform's `tick` and `tickHz` for that.
             "seconds": round(self.elapsed, 1),
             "snakes": [

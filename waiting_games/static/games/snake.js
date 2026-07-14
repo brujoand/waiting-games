@@ -1,7 +1,7 @@
 // Snake.
 //
 // update() does NO dom work -- it just stashes the latest frame. The rAF loop
-// paints from it. That is what keeps an 8 Hz state stream from stuttering a
+// paints from it. That is what keeps a 6 Hz state stream from stuttering a
 // 60 Hz screen, and what stops the canvas being rebuilt on every push.
 
 import { t } from "../i18n.js";
@@ -28,9 +28,9 @@ const ARROWS = {
 };
 
 export function create({ root, me, send }) {
-  // Snake moves ONE WHOLE CELL per tick, at 8 Hz. Drawn at the cell it is on, it
-  // therefore teleports a full grid square eight times a second, and no amount of
-  // repainting at 60 fps helps: the thing being painted only changes 8 times a
+  // Snake moves ONE WHOLE CELL per tick, at 6 Hz. Drawn at the cell it is on, it
+  // therefore teleports a full grid square six times a second, and no amount of
+  // repainting at 60 fps helps: the thing being painted only changes 6 times a
   // second. That is the choppiness, and it is not a dropped-frame problem -- it
   // is what the game looks like when you draw it honestly.
   //
@@ -167,9 +167,9 @@ export function describe(game, me) {
   }
 
   // No clock on this line. The server streams `seconds` to one decimal place,
-  // eight times a second, and a status line that rewrites itself at 8 Hz is one
-  // nobody can actually read -- the digits just flicker. The elapsed time IS the
-  // score in solo, so it is reported once, when the run ends.
+  // once per tick, and a status line that rewrites itself several times a second
+  // is one nobody can actually read -- the digits just flicker. The elapsed time
+  // IS the score in solo, so it is reported once, when the run ends.
   const you = mine
     ? mine.alive
       ? t("snake.length", { length: mine.length })
