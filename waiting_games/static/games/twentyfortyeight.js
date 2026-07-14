@@ -42,16 +42,25 @@ const ARROWS = {
 //
 // This was 110ms, which is roughly what the original game uses, and it was too
 // quick to follow: the tiles were plainly moving and you still could not say which
-// ones had. A move is something to be READ, and there is time to read it -- the
-// board is only ever waiting on the player. So the slide takes its time, and the
-// swell that follows happens AFTER it rather than under it, because two things at
-// once are one thing you cannot see.
+// ones had. A move is something to be READ, and the board is only ever waiting on
+// the player -- it can afford to take its time.
 //
-// The whole move is a little over a third of a second. That is the ceiling: past
-// about half a second the animation stops explaining the move and starts being
-// something you sit through, and a player who already knows what they pressed
-// resents every frame of it.
-const SLIDE_MS = 190;
+// Nothing here overlaps anything else, which is the whole trick: two things at once
+// are one thing you cannot see. The tiles travel; THEN the pair that met draws
+// itself together; THEN what they became blooms; and only THEN does the free tile
+// fade up. Half a second, in four beats you can name.
+const SLIDE_MS = 240;
+
+// The last stretch of the trip, where a pair about to merge stops being two tiles.
+// They shrink and dim INTO each other as they land, so a merge reads as two things
+// fusing -- rather than two things vanishing and a third appearing where they were,
+// which is what it read as when the swap was instant.
+//
+// What they became then blooms out of exactly the size they left off at. FUSED is
+// where this hands over to the css, so `t48-merge` must bloom FROM the same scale;
+// the two numbers are one number, written twice.
+const FUSE_FROM = 0.55; // ...of the way through the slide, the pair starts fusing
+const FUSED = 0.78; // ...and this is how small they are by the end of it
 
 const still = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -180,6 +189,31 @@ export function create({ root, send }) {
     return slid.every((step) => step.tile) ? slid : null;
   }
 
+  // A tile drawing itself into the one it is about to become: it shrinks and dims
+  // over the last stretch of its trip, and stays that way until paint() takes it off
+  // the board and puts the merged tile in its place.
+  function fuse(tile) {
+    const timing = {
+      delay: SLIDE_MS * FUSE_FROM,
+      duration: SLIDE_MS * (1 - FUSE_FROM),
+      easing: "ease-in",
+      // Held, so the tile does not spring back to full size for the one frame
+      // between the slide ending and the board being repainted.
+      fill: "forwards",
+    };
+
+    return [
+      // "add", not the default "replace": this tile is ALSO being carried across the
+      // board by a translate, and a second animation of `transform` would otherwise
+      // simply win -- the tile would shrink on the spot and never arrive.
+      tile.animate([{ transform: "scale(1)" }, { transform: `scale(${FUSED})` }], {
+        ...timing,
+        composite: "add",
+      }),
+      tile.animate([{ opacity: 1 }, { opacity: 0.55 }], timing),
+    ];
+  }
+
   function slide(game, slid) {
     const merged = new Set();
 
@@ -189,20 +223,28 @@ export function create({ root, send }) {
     // travel from, and just stays put.
     for (const { tile, from, to, merged: absorbed } of slid) {
       tile.style.gridArea = `${Math.floor(to / size) + 1} / ${(to % size) + 1}`;
-      if (absorbed) merged.add(to);
 
       const [dx, dy] = offset(from, to);
-      if (!dx && !dy) continue;
+      if (dx || dy) {
+        flying.push(
+          tile.animate(
+            [
+              { transform: `translate(${dx}px, ${dy}px)` },
+              { transform: "translate(0, 0)" },
+            ],
+            { duration: SLIDE_MS, easing: "ease-in-out" },
+          ),
+        );
+      }
 
-      flying.push(
-        tile.animate(
-          [
-            { transform: `translate(${dx}px, ${dy}px)` },
-            { transform: "translate(0, 0)" },
-          ],
-          { duration: SLIDE_MS, easing: "ease-in-out" },
-        ),
-      );
+      // Both halves fuse, including the one that never moved -- a tile standing at
+      // the wall being merged INTO is just as much a part of the pair as the one
+      // that crossed the board to reach it, and a merge where only one half draws
+      // itself in looks like one tile eating another.
+      if (absorbed) {
+        merged.add(to);
+        flying.push(...fuse(tile));
+      }
     }
 
     // Nothing is standing on a square now -- it is all in the air, and two of them
