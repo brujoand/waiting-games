@@ -907,6 +907,29 @@ header {
   font-size: 0.75rem;
   font-variant-numeric: tabular-nums;
   line-height: 1.5;
+}
+
+.readout pre {
+  margin: 0;
   white-space: pre;
   overflow-x: auto;
+}
+
+/* The button matters more than it looks. A page served over plain http is not a
+   secure context, so navigator.clipboard is simply absent -- which is exactly the
+   page you are debugging when you are debugging from another machine. */
+.readout-copy {
+  margin-top: 0.5rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--muted);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 0.7rem;
+  cursor: pointer;
+}
+
+.readout-copy:hover {
+  color: var(--fg, inherit);
 }

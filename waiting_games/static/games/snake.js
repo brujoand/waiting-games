@@ -81,8 +81,11 @@ export function create({ root, me, send }) {
   // told they would disagree the moment somebody used two of them.
   const post = onChange(send);
   const intend = (input) => {
-    meter?.pressed(); // start the stopwatch: key now, turn on some later frame
-    post(input);
+    // Only time a press that actually goes out. onChange() swallows a repeat --
+    // you pressed the way you were already going -- and a swallowed press has no
+    // turn coming to answer it, so a stopwatch started on one would run until the
+    // NEXT real turn and report that wait as if it were this press's.
+    if (post(input)) meter?.pressed();
   };
   const stopKeys = keys(ARROWS, intend);
   const stopSwipe = swipe(board.element, intend, SWIPES);
