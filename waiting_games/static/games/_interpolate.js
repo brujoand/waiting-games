@@ -149,7 +149,34 @@ export function timeline(tickHz) {
       if (origin === null || ideal < origin) origin = ideal;
       else origin += (ideal - origin) * 0.002;
 
-      const lateness = (now - (origin + tick * tickMs)) / tickMs;
+      let lateness = (now - (origin + tick * tickMs)) / tickMs;
+
+      // ...but origin is a min(), and a min NEVER FORGETS. One sample taken at the
+      // wrong moment pins it for the rest of the session, and there is a sample
+      // taken at the wrong moment in every game anybody actually plays: the state
+      // pushed while the board sits in the LOBBY carries tick 0, because a
+      // real-time game reports its clock whether or not the clock is running. Sit
+      // there for ten seconds deciding, press Start, and every tick that follows
+      // measures as ten seconds late against an origin ten seconds too early --
+      // and the drift above gives it back at 0.2% a packet, which is to say never.
+      //
+      // What that looks like is not lag. `late` pins to the ceiling, the render
+      // clock runs permanently past the newest state, the clamp in read() holds it
+      // at alpha = 1 -- and alpha = 1 draws the snake ON the cell it is travelling
+      // to, every frame, and never once between two cells. The interpolation does
+      // not break. It silently stops happening, and the snake teleports a whole
+      // cell six times a second on a stream that is otherwise perfect.
+      //
+      // So: nothing can be later than the ceiling. Past that we would be holding
+      // anyway, so the delay buys nothing -- and a packet that claims to be later
+      // than the game can be played is not a late packet, it is a broken estimate.
+      // Believe the packet, not the estimate, and start again from here.
+      if (lateness > CEILING_TICKS) {
+        origin = ideal;
+        lateness = 0;
+        late = 0;
+      }
+
       const hole = newest === null ? 1 : tick - newest;
 
       late = settle(Math.max(lateness, late * FORGET));
