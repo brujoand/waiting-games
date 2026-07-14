@@ -6,6 +6,7 @@ from .connectfour import ConnectFour
 from .dotsandboxes import DotsAndBoxes
 from .gris import Gris
 from .hangman import Hangman
+from .idiot import Idiot
 from .nim import Nim
 from .othello import Othello
 from .pong import Pong
@@ -22,6 +23,7 @@ GAMES: dict[str, type[Game]] = {
     Nim.key: Nim,
     Hangman.key: Hangman,
     Battleship.key: Battleship,
+    Idiot.key: Idiot,
     Gris.key: Gris,
     Snake.key: Snake,
     Snakes.key: Snakes,

@@ -1034,7 +1034,13 @@ header {
   flex-wrap: wrap;
 }
 
-.gris-card {
+/* -- a playing card ------------------------------------------------------- */
+
+/* Shared by every game that deals one -- Gris and Idiot today. It is white and
+   black in both themes on purpose: a card is a physical object, and a dark-mode
+   playing card is a thing nobody has ever held. See games/_cards.js. */
+
+.card {
   display: grid;
   place-items: center;
   gap: 2px;
@@ -1050,30 +1056,45 @@ header {
   transition: transform 0.08s;
 }
 
-.gris-card i {
+.card i {
   font-size: 1.5rem;
   font-style: normal;
 }
 
-.gris-card[data-suit="H"],
-.gris-card[data-suit="D"] {
+.card[data-suit="H"],
+.card[data-suit="D"] {
   color: #d9534f;
 }
 
-.gris-card:enabled:hover {
+.card:enabled:hover {
   transform: translateY(-6px);
   border-color: var(--accent);
 }
 
-.gris-card[data-chosen="true"] {
+/* Picked up off the rack: the card Gris is about to pass, and every card Idiot is
+   about to play. The same gesture, so the same lift. */
+.card[data-chosen="true"] {
   transform: translateY(-10px);
   border-color: var(--accent);
   box-shadow: 0 0 0 2px var(--accent);
 }
 
-.gris-card:disabled {
+.card:disabled {
   cursor: default;
   opacity: 0.7;
+}
+
+/* A card nobody can see: somebody's hand, or one of the three you are sitting on
+   and have never looked at. It has a back, not a face. */
+.card-back {
+  background: repeating-linear-gradient(
+    45deg,
+    var(--accent),
+    var(--accent) 4px,
+    color-mix(in srgb, var(--accent) 55%, #fff) 4px,
+    color-mix(in srgb, var(--accent) 55%, #fff) 8px
+  );
+  border-color: color-mix(in srgb, var(--accent) 60%, var(--line));
 }
 
 /* -- the nose -- */
@@ -1104,4 +1125,204 @@ header {
   color: var(--muted);
   font-size: 0.85rem;
   text-align: center;
+}
+
+/* -- Idiot ---------------------------------------------------------------- */
+
+.board-idiot {
+  display: grid;
+  gap: 0.9rem;
+  margin-bottom: 1rem;
+}
+
+/* The table: everyone, what they have face up, and how much they are still
+   holding. This is where you look to see who is about to go out. */
+
+.idiot-table {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.idiot-player {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.idiot-player[data-me="true"] {
+  border-color: var(--accent);
+}
+
+.idiot-player[data-turn="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.idiot-player[data-out="true"] {
+  opacity: 0.55;
+}
+
+.idiot-player[data-idiot="true"] {
+  border-color: #d9534f;
+  opacity: 1;
+}
+
+.idiot-name {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Another player's face-up cards, small: you have to be able to read them -- they
+   are what that player will be playing shortly -- but they are not your cards. */
+.idiot-up {
+  display: flex;
+  gap: 3px;
+}
+
+.idiot-up .card {
+  width: 1.7rem;
+  height: 2.4rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  cursor: default;
+}
+
+.idiot-up .card i {
+  font-size: 0.8rem;
+}
+
+/* What they are holding, as card-shaped marks rather than a number: a player down
+   to two cards is the whole tension of the game, and "2" does not look like it. */
+.idiot-held {
+  display: flex;
+  gap: 2px;
+}
+
+.idiot-pip {
+  width: 0.5rem;
+  height: 0.75rem;
+  border-radius: 2px;
+  background: var(--accent);
+}
+
+.idiot-pip[data-kind="down"] {
+  background: var(--muted);
+}
+
+.idiot-chip {
+  width: 5.5rem;
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+/* The middle: the deck, the pile you are answering, and what has been burned. */
+
+.idiot-middle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 1.2rem;
+}
+
+.idiot-counter {
+  display: grid;
+  justify-items: center;
+  min-width: 3rem;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.idiot-counter b {
+  color: var(--ink);
+  font-size: 1.2rem;
+}
+
+.idiot-stack {
+  display: grid;
+  justify-items: center;
+  gap: 0.3rem;
+}
+
+/* The last few cards, overlapping. Not just the top one: four of a kind burns the
+   pile, and you cannot see one coming if you can only see one card. */
+.idiot-pile {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 6rem;
+  min-height: 5rem;
+  padding: 0 0.5rem;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+}
+
+.idiot-pile .card {
+  cursor: default;
+}
+
+.idiot-pile .card + .card {
+  margin-left: -2.2rem;
+}
+
+.idiot-empty,
+.idiot-count {
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.idiot-note {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.9rem;
+  text-align: center;
+}
+
+/* Your own nine, in the order the game will force you to play them. */
+
+.idiot-mine {
+  display: grid;
+  gap: 0.8rem;
+  justify-items: center;
+}
+
+.idiot-rack {
+  display: flex;
+  gap: 0.4rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* The face-up three sit ON the face-down three, which is how they sit on a real
+   table and exactly why you play them in that order. */
+.idiot-stacked {
+  display: grid;
+}
+
+.idiot-stacked > * {
+  grid-area: 1 / 1;
+}
+
+.idiot-stacked > .idiot-rack:last-child {
+  transform: translateY(0.9rem);
+}
+
+.idiot-hand {
+  margin-top: 1.4rem;
+}
+
+.idiot-actions {
+  justify-content: center;
 }

@@ -21,6 +21,7 @@ from waiting_games.games import InvalidMove
 from waiting_games.games.battleship import FIRING, HIT, MISS, SIZE, Battleship
 from waiting_games.games.gris import HAND, LETTERS, RANKS, Gris, deck_for
 from waiting_games.games.hangman import GALLOWS, MAX_WRONG, Hangman
+from waiting_games.games.idiot import RANKS as IDIOT_RANKS
 
 A, B, C = "u-alice", "u-bob", "u-carol"
 
@@ -475,20 +476,21 @@ NOBODY_HAS_FOUR = (
 
 
 def test_every_rank_has_a_face_in_both_languages():
-    """The renderer builds its key from the card: t(`gris.rank.${card[0]}`). That is
+    """The renderer builds its key from the card: t(`card.rank.${code[0]}`). That is
     a key no static check can see, so a rank with no string in the dictionary does
-    not fail a build -- it draws the card face as the literal text "gris.rank.6".
+    not fail a build -- it draws the card face as the literal text "card.rank.6".
 
-    RANKS is Python and the faces are JavaScript, and the seat count is derived from
-    RANKS, so widening the table is exactly the change that would do it. Nothing but
-    this holds the two together.
+    The ranks are Python and the faces are JavaScript, and BOTH card games deal from
+    the same dictionary now (static/games/_cards.js) while dealing different cards:
+    Gris's deck is derived from its seat count, and Idiot's is the whole 52. So this
+    is the union of the two, and it is the only thing holding them together.
     """
     faces = (
         pathlib.Path(__file__).parent.parent / "waiting_games" / "static" / "i18n.js"
     ).read_text()
 
-    for rank in RANKS:
-        key = f'"gris.rank.{rank.lower()}":'
+    for rank in sorted(set(RANKS) | set(IDIOT_RANKS)):
+        key = f'"card.rank.{rank.lower()}":'
         # Once per dictionary: English and Norwegian.
         assert faces.count(key) == 2, f"no card face for the {rank}"
 
