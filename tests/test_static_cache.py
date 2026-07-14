@@ -27,7 +27,7 @@ def test_every_module_must_be_revalidated_before_it_is_reused():
         "/static/app.js",
         "/static/games/snake.js",
         "/static/games/snake_rules.js",
-        "/static/games/_interpolate.js",
+        "/static/games/_canvas.js",
         "/static/games/_rng.js",
         "/static/style.css",
     ]:

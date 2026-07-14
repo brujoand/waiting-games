@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 from conftest import Watcher
 
-from waiting_games.games.snake import HEIGHT, WIDTH, Snake
+from waiting_games.games.snake import BOARD, SPEED, Snake
 from waiting_games.lobby import Lobby, Player
 
 A, B = "u-alice", "u-bob"
@@ -82,10 +82,11 @@ def test_a_client_cannot_talk_its_score_up():
     read -- the board that comes out of the replay is the board, and the length of
     the snake in it is the score."""
     game = solo()
-    game.run([], 6)  # six ticks straight, eating nothing
+    game.apples = []  # nothing to eat
+    game.run([], 6)
 
     # There is no field it could have inflated: the state is derived, every time.
-    assert len(game.snakes[0].cells) == 3  # it never ate, so it never grew
+    assert game.snakes[0].length == 3.0  # it never ate, so it never grew
     assert game.snakes[0].alive
 
 
@@ -93,7 +94,7 @@ def test_a_run_that_walks_into_the_wall_ends_the_game_here_too():
     """The browser saw itself die. The server has to reach the same verdict from the
     same moves, or the player is looking at a game-over the lobby does not believe."""
     game = solo()
-    game.run([], WIDTH + 5)  # it starts facing right and nobody turns it
+    game.run([], int(BOARD / SPEED * game.tick_hz) + 5)  # nobody turns it
 
     assert not game.snakes[0].alive
     assert game.over
@@ -121,10 +122,10 @@ def test_a_browser_run_game_is_never_ticked_by_the_lobby_as_well():
     asyncio.run(scenario())
 
 
-@pytest.mark.parametrize("ticks", [0, 1, HEIGHT * 4])
+@pytest.mark.parametrize("ticks", [0, 1, 400])
 def test_replaying_any_number_of_ticks_is_safe(ticks):
     """`ticks` is a loop bound on OUR machine, handed to us by a browser. main.py
     clamps it; the engine must not fall over inside the clamp."""
     game = solo()
     game.run([{"tick": 1, "dir": "up"}], ticks)
-    assert game.public_state()["snakes"][0]["cells"]
+    assert game.public_state()["snakes"][0]["path"]

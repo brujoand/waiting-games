@@ -29,5 +29,13 @@ export function rng(seed) {
     // 0 <= n < bound. Modulo, and its bias, is fine here: 576 cells against four
     // billion states.
     below: (bound) => next() % bound,
+
+    // 0.0 <= n < 1.0, and it must be the SAME double Python produces. The snake is
+    // off the grid, so an apple lands on a real coordinate rather than in a square,
+    // and this side has to put it in exactly the same place. Dividing a 32-bit
+    // integer by 2**32 is exact in IEEE-754 -- 32 bits of significand into a slot
+    // with 53 -- so both languages give the identical value, bit for bit, and no
+    // rounding rule has to be trusted.
+    unit: () => next() / 4294967296.0,
   };
 }

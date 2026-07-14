@@ -79,13 +79,26 @@ Two things to get right:
   then *intent*: `tick()` decides what actually happens and when the game ends,
   and the tick loop — not the move handler — broadcasts. Don't echo real-time
   input back; it turns held keys into a fan-out storm.
-- **If it moves in whole cells, decide each move a tick early and put it on the
-  wire** — Snake's `next`. A renderer can only slide between two cells it knows,
-  so if the far one is a secret until the tick fires it must draw the world a
-  tick in the past — and one tick is one whole CELL of lag, at every tick rate
-  there is. That cell is not a speed problem and no tick rate fixes it: it is
-  the renderer waiting. Send the cell, and the browser draws the move as it
-  happens instead of a cell after it did.
+- **Don't put a grid on the wire.** Snake was a 6 Hz grid game and it could not
+  be played over a network, and a week went into finding out why. On a grid the
+  smallest error the wire can hand you is one whole CELL — there is nothing
+  between cell 5 and cell 6 — and a cell is exactly the granularity that decides
+  whether you are alive. Interpolation, buffering, prediction, deciding the move
+  a tick early: all of it was trying to hide a quantum the same size as the game.
+  Continuous positions make the same 300 ms worth a fifth of a unit, which is a
+  smudge rather than a death. That is what the .io games have and we did not —
+  not smoothness, **forgiveness**.
+- **Floats are fine. `sin`, `cos` and `sqrt` are not.** Two simulations must agree
+  to the last bit (the server replays a browser-run game to check it), and `+ - *
+  /` on doubles are specified identically by Python and JavaScript while a square
+  root may differ in its last bit. So: four directions rather than a free angle,
+  and distances compared **squared**. `tests/test_determinism.py` proves it over
+  600 ticks, with no tolerance.
+- **A body with a free heading needs a minimum turning radius.** Turn, then turn
+  again within your own width, and the snake is running parallel to itself and
+  inside itself — geometry, not a bug. Snake's `MIN_TURN` is the four-direction
+  version of slither's turn-rate cap, and it is *soft*: a turn asked for too early
+  is remembered, not refused.
 
 - **A game with one player and no hidden information can be played in the
   BROWSER** — say so with `client_clock`, and the lobby gives it no clock. Solo

@@ -37,3 +37,14 @@ class Rng:
         """0 <= n < bound. Modulo, and the bias that comes with it, is fine here:
         the board is 576 cells and the generator has four billion states."""
         return self.next() % bound
+
+    def unit(self) -> float:
+        """0.0 <= n < 1.0, and it must be the SAME double in both languages.
+
+        The snake is off the grid, so an apple lands on a real coordinate rather than
+        in a square, and the browser has to put it in exactly the same place. Dividing
+        a 32-bit integer by 2**32 is exact in IEEE-754 -- the numerator has 32 bits of
+        significand to spend and a double has 53 -- so Python and JavaScript produce
+        the identical value, bit for bit, and no rounding rule has to be trusted.
+        """
+        return self.next() / 4294967296.0
