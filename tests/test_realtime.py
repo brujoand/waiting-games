@@ -20,7 +20,7 @@ from waiting_games.games.pong import (
     PADDLE_THICK,
     Pong,
 )
-from waiting_games.games.snake import BOARD, SPEED, Snake
+from waiting_games.games.snake import HEIGHT, WIDTH, Snake
 from waiting_games.lobby import Lobby, Player
 
 A, B, C = "u-alice", "u-bob", "u-carol"
@@ -63,44 +63,74 @@ def staged(game):
 
 
 # ==========================================================================
-# Snake -- off the grid
+# Snake
 # ==========================================================================
 
 
 def test_a_snake_moves_on_its_own_with_no_input_at_all():
-    """The whole difference from a turn-based game: the world advances because the
-    clock ticked, not because anybody did anything."""
+    """The whole difference from a turn-based game: the world advances because
+    the clock ticked, not because anybody did anything."""
     game = seat(Snake, players=(A,))
-    before = list(game.snakes[0].head)
+    before = game.snakes[0].head
 
     game.tick(1 / game.tick_hz)
 
-    head = game.snakes[0].head
-    assert head[0] > before[0]  # it starts facing right
-    assert head[1] == before[1]
-    # ...and it moved a REAL distance, not a square. Speed is units per second now,
-    # and the tick rate is the network's business rather than the game's.
-    assert head[0] - before[0] == pytest.approx(SPEED / game.tick_hz)
+    assert game.snakes[0].head != before
+    assert game.snakes[0].head == (before[0] + 1, before[1])  # it starts facing right
 
 
-def test_steering_takes_effect_at_once():
-    """On a grid it could not. A turn had to wait for the next cell boundary, and
-    then -- to let the browser draw the move as it happened -- for the one after that.
-    Off the grid there is no boundary to wait for: you turn where you are.
+def test_steering_lands_on_the_move_after_the_one_already_in_flight():
+    """A move is DECIDED a tick before it is made, so your key lands on the move
+    after the one every browser is already drawing.
 
-    That is not a nicety. It is why a late packet stopped being fatal: a turn arriving
-    300ms late now happens 300ms further along the same line, which is a smudge. On the
-    grid it happened a whole CELL later, and a cell is the difference between rounding
-    the corner and hitting the wall."""
+    That is not a tick of latency added -- it is the tick you always waited,
+    moved to where it can be SEEN. The renderer used to draw the world a tick in
+    the past, because a slide needs the cell it is going to and only the server
+    knew it. A tick in the past is one whole CELL in the past, in a game that
+    moves one cell per tick, and that cell is why the snake never went where you
+    pointed it. Now the cell is on the wire before it is needed, the browser
+    draws the move as it happens, and the net is half a tick to see your own turn
+    where it used to be a tick and a half."""
     game = seat(Snake, players=(A,))
+    snake = game.snakes[0]
+
+    # It is already committed to carrying on right: that is the move on screen.
+    assert snake.step.heading == "right"
+
     game.apply_move(A, {"dir": "down"})
+    assert snake.pending == "down"  # recorded...
+    assert snake.step.heading == "right"  # ...but the move in flight is untouched
 
-    assert game.snakes[0].heading == "right"  # not yet: a move is still intent
     game.tick(1 / game.tick_hz)
-    assert game.snakes[0].heading == "down"  # ...and the very next tick turns it
+    assert snake.heading == "right"  # it made the move it was committed to
+    assert snake.step.heading == "down"  # ...and is now committed to yours
 
-    # The path grew a corner exactly where it turned, and nowhere else.
-    assert len(game.snakes[0].path) == 3
+    game.tick(1 / game.tick_hz)
+    assert snake.heading == "down"
+
+
+def test_a_snake_cannot_reverse_into_the_neck_it_is_about_to_have():
+    """The no-reverse rule is judged against the move in FLIGHT, not the one last
+    made -- and once a move is decided a tick ahead, those are different
+    directions and the difference is a folded snake.
+
+    Turn down. On the next tick the snake moves right (the move it was already
+    committed to) and takes on `down` for the one after, which every browser is
+    now drawing. Ask for up. The last direction TRAVELLED is still rightwards, off
+    which up is a perfectly ordinary turn -- so a check against it says yes, and
+    the snake goes down and then straight back up through its own neck. It has to
+    be judged against down, which is where the snake is actually going."""
+    game = seat(Snake, players=(A,))
+    snake = game.snakes[0]
+
+    game.apply_move(A, {"dir": "down"})
+    game.tick(1 / game.tick_hz)
+
+    assert snake.heading == "right"  # what it last did...
+    assert snake.step.heading == "down"  # ...and what it is about to do
+
+    with rejected("snake.no_reverse"):
+        game.apply_move(A, {"dir": "up"})
 
 
 def test_a_snake_cannot_reverse_into_its_own_neck():
@@ -117,78 +147,60 @@ def test_an_unknown_direction_is_rejected():
         game.apply_move(A, {"dir": "sideways"})
 
 
-def test_turning_twice_in_a_hurry_does_not_kill_you():
-    """THE RULE THE GRID GAVE US FOR FREE, and off the grid we have to say out loud.
-
-    On a grid you could only turn on a cell boundary, so two turns put the head a whole
-    cell from its own neck and it was never in danger. Off the grid you turn wherever
-    you like -- so left, then left again a fraction of a unit later, brings the head
-    right alongside the body it just left. Without NECK, the game would kill you for
-    turning twice quickly, which is not a rule anybody would call fair."""
-    game = seat(Snake, players=(A,))
-
-    game.apply_move(A, {"dir": "down"})
-    run(game, 1)
-    game.apply_move(A, {"dir": "left"})
-    run(game, 3)
-
-    assert game.snakes[0].alive, "it turned twice in a hurry and the game killed it"
-
-
 def test_a_snake_dies_on_the_wall():
     game = seat(Snake, players=(A,))
-    run(game, int(BOARD / SPEED * game.tick_hz) + 5)  # nobody turns it
+    run(game, WIDTH + 5)  # it starts facing right and nobody turns it
 
     assert not game.snakes[0].alive
     assert game.over  # solo: the game ends when you do
 
 
-def test_an_apple_is_eaten_by_OVERLAP_rather_than_by_landing_on_it():
-    """The grid's rule was coincidence: the head's cell had to BE the apple's cell.
-    There are no cells now, so an apple is eaten the way anything is eaten anywhere
-    else -- by running into it. Put one a little off the line and the snake still gets
-    it, because it is wide and so is the apple."""
+def test_eating_an_apple_makes_the_snake_longer():
     game = seat(Snake, players=(A,))
     snake = game.snakes[0]
-    length = snake.length
+    length = len(snake.cells)
 
+    # Put an apple exactly where the head is about to be.
     x, y = snake.head
-    # NOT dead ahead: half a body-width off the centre line. On a grid this apple would
-    # be in a different cell and the snake would sail straight past it.
-    game.apples = [[x + 2.0, y + 0.4]]
+    game.apples = [(x + 1, y)]
 
-    run(game, int(3.0 / SPEED * game.tick_hz))
+    run(game, 1)
+    assert (x + 1, y) not in game.apples  # eaten, and a new one grown elsewhere
 
-    assert game.apples and game.apples[0] != [x + 2.0, y + 0.4], "it went hungry"
-    run(game, 20)
-    assert snake.length > length
+    run(game, 3)
+    assert len(snake.cells) > length
 
 
 def test_the_last_snake_alive_wins():
     game = seat(Snake)  # alice and bob
+    alice, bob = game.snakes
 
-    game.apply_move(B, {"dir": "up"})  # steer bob into the wall; leave alice alone
-    run(game, int(BOARD / SPEED * game.tick_hz))
+    # Steer bob into the wall and leave alice alone. Their rows differ, so alice
+    # is nowhere near the edge yet.
+    game.apply_move(B, {"dir": "up"})
+    run(game, HEIGHT)
 
-    assert not game.snakes[1].alive
-    assert game.snakes[0].alive
+    assert not bob.alive
+    assert alice.alive
     assert game.over
     assert game.winner == A
 
 
 def test_two_snakes_meeting_head_on_both_die():
-    """Everyone moves before anyone dies, so the snake that happens to be first in the
-    list must not win a collision it should have shared."""
+    """Everyone moves at once, so the snake that happens to be first in the list
+    must not win a collision it should have shared."""
     game = seat(Snake)
     alice, bob = game.snakes
 
-    alice.path = [[10.0, 5.0], [7.0, 5.0]]
+    # Face them at each other with an odd gap, so both heads land on the SAME
+    # cell. Real lengths: a snake never gets shorter than it starts.
+    alice.cells = [(10, 5), (9, 5), (8, 5)]
     alice.heading = alice.pending = "right"
-    bob.path = [[11.0, 5.0], [14.0, 5.0]]
+    bob.cells = [(12, 5), (13, 5), (14, 5)]
     bob.heading = bob.pending = "left"
     game.apples = []
 
-    run(game, 2)
+    run(staged(game), 1)
 
     assert not alice.alive
     assert not bob.alive
@@ -196,31 +208,47 @@ def test_two_snakes_meeting_head_on_both_die():
     assert game.winner is None  # a draw: nobody survived
 
 
-def test_a_snake_dies_on_somebody_else_right_up_to_their_head():
-    """Your own neck is forgiven -- see NECK -- and nobody else's is. Theirs can kill
-    you all the way to the tip."""
+def test_two_snakes_cannot_swap_places_through_each_other():
+    """An even gap: they do not meet on one cell, they try to pass through each
+    other. Each head lands where the other's head just was, which is a crash --
+    not a swap."""
     game = seat(Snake)
     alice, bob = game.snakes
 
-    # A long wall of bob down the board, with somewhere to go -- a snake that steers
-    # into the scenery and dies stops blocking, and alice would sail through the corpse.
-    bob.path = [[12.0, 14.0], [12.0, 2.0]]
-    bob.length = 12.0
-    bob.heading = bob.pending = "down"
-
-    alice.path = [[10.5, 7.0], [7.5, 7.0]]  # alice, heading straight into his flank
+    alice.cells = [(10, 5), (9, 5), (8, 5)]
     alice.heading = alice.pending = "right"
+    bob.cells = [(11, 5), (12, 5), (13, 5)]
+    bob.heading = bob.pending = "left"
     game.apples = []
 
-    run(game, 6)
+    run(staged(game), 1)
 
-    assert not alice.alive, "she ran into him and lived"
-    assert bob.alive
+    assert not alice.alive
+    assert not bob.alive
 
 
-def test_solo_never_declares_a_winner():
+def test_a_snake_may_follow_a_tail_that_is_moving_out_of_the_way():
+    """The cell a tail is vacating this tick is free to move into -- unless its
+    owner is growing, in which case the tail stays put and it is a crash."""
+    game = seat(Snake)
+    alice, bob = game.snakes
+    game.apples = []
+
+    # Bob's tail is at (12,5) and about to move on. Alice's head is right behind.
+    bob.cells = [(14, 5), (13, 5), (12, 5)]
+    bob.heading = bob.pending = "right"
+    alice.cells = [(11, 5), (10, 5), (9, 5)]
+    alice.heading = alice.pending = "right"
+
+    run(staged(game), 1)
+
+    assert alice.alive  # she moved into a cell that was being vacated
+    assert alice.head == (12, 5)
+
+
+def test_solo_slange_never_declares_a_winner():
     game = seat(Snake, players=(A,))
-    run(game, int(BOARD / SPEED * game.tick_hz) + 5)
+    run(game, WIDTH + 5)
 
     assert game.over
     assert game.winner is None  # you played against the wall, and the wall won
@@ -491,9 +519,7 @@ def test_an_empty_room_parks_the_clock():
         # Nobody has ever opened a socket, so the clock is parked from the start.
         assert not session.watchers.is_set()
 
-        # A COPY. `head` is path[0] and the engine advances it in place, so a bare
-        # reference would track the snake and compare equal to itself for ever.
-        head = list(session.engine.snakes[0].head)
+        head = session.engine.snakes[0].head
         await asyncio.sleep(0.4)  # several ticks' worth of wall-clock
         assert session.engine.snakes[0].head == head, "it ticked into an empty room"
 

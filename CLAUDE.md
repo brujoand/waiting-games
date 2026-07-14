@@ -120,6 +120,25 @@ Two things to get right:
   `random.Random` is a Mersenne Twister and the browser has no such thing, hence
   `games/_rng.py` and its twin.
 
+- **A grid cannot be shared.** Snake is the Nokia game — a matrix, one cell per tick,
+  walls — and it works, because solo never touches a network. But on a grid the
+  smallest error the wire can hand you is one whole CELL, and a cell is exactly the
+  granularity that decides whether you are alive. **Snakes** is the shared one: real
+  positions, turn where you ask, eat by overlap, no edges. The same 300 ms is then
+  worth a fifth of a unit — a smudge, not a death. That is what the .io games have and
+  a grid cannot: not smoothness, **forgiveness**.
+- **Floats are fine. `sin`, `cos` and `sqrt` are not.** Two simulations must agree to
+  the last bit (the server replays a browser-run game to check it, and rollback would
+  need the same). `+ - * /` on doubles are specified identically by Python and
+  JavaScript; a square root may differ in its last bit, and one bit is two different
+  games. Hence four directions rather than a free angle, distances compared **squared**,
+  and a wrapping **torus** rather than a sphere — a wrap is `x mod BOARD`; a sphere is
+  trigonometry. `tests/test_determinism.py` proves both games with **no tolerance**.
+- **A body with a free heading needs a minimum turning radius.** Turn, then turn again
+  inside your own width, and the snake is running parallel to itself and *inside*
+  itself — geometry, not a bug. `MIN_TURN` is the four-direction version of slither's
+  turn-rate cap, and it is *soft*: a turn asked for too early is remembered, not refused.
+
 A game's `key` is also its renderer's filename. Renaming one renames both.
 
 ## Language

@@ -9,6 +9,7 @@ from .nim import Nim
 from .othello import Othello
 from .pong import Pong
 from .snake import Snake
+from .snakes import Snakes
 from .tictactoe import TicTacToe
 from .twentyfortyeight import TwentyFortyEight
 
@@ -21,6 +22,7 @@ GAMES: dict[str, type[Game]] = {
     Hangman.key: Hangman,
     Battleship.key: Battleship,
     Snake.key: Snake,
+    Snakes.key: Snakes,
     Pong.key: Pong,
     TwentyFortyEight.key: TwentyFortyEight,
 }
