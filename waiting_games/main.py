@@ -300,6 +300,28 @@ async def start_session(
     return session.summary()
 
 
+@app.post("/api/sessions/{session_id}/rematch")
+async def rematch_session(
+    session_id: str, player: Player = Depends(current_player)
+) -> dict:
+    """Play it again: same game, same people, same session id.
+
+    Which is why nobody has to be told where to go. Everyone still watching is
+    already on this session's socket, and the next broadcast simply hands them a
+    board that has started over -- see Lobby.rematch.
+    """
+    try:
+        session = lobby.rematch(session_id, player)
+    except InvalidMove as exc:
+        raise HTTPException(status_code=400, detail=exc.as_dict()) from exc
+    # A rematch always starts the game, so a real-time one always needs a clock.
+    await lobby.launch(session)
+    await lobby.broadcast_state(session)
+    # It was finished, so the lobby was not listing it. It is listing it now.
+    await lobby.broadcast_lobby()
+    return session.summary()
+
+
 @app.websocket("/ws/lobby")
 async def lobby_socket(websocket: WebSocket) -> None:
     try:

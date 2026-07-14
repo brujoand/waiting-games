@@ -23,6 +23,7 @@ from waiting_games.auth import (
     clean_name,
     display_name,
 )
+from waiting_games.games.base import Result
 from waiting_games.lobby import Lobby
 from waiting_games.main import VERSION, app, lobby, sessions
 
@@ -223,6 +224,141 @@ def test_closing_a_game_that_is_already_gone_is_rejected():
 
     with rejected("lobby.no_such_game"):
         board.close("nope", ALICE)
+
+
+# -- rematch -----------------------------------------------------------------
+
+
+def played_out(board: Lobby):
+    """A finished two-player game of noughts and crosses: alice takes the top row
+    while bob is busy with the middle one."""
+    session = board.create("tictactoe", ALICE)
+    board.join(session.id, BOB)  # two seats, so it starts itself
+
+    for player, cell in ((ALICE, 0), (BOB, 3), (ALICE, 1), (BOB, 4), (ALICE, 2)):
+        session.engine.apply_move(player.sub, {"cell": cell})
+
+    assert session.engine.over
+    assert session.engine.winner == ALICE.sub
+    return session
+
+
+def test_a_rematch_replays_the_same_session_with_a_new_board():
+    board = Lobby()
+    session = played_out(board)
+    engine = session.engine
+
+    board.rematch(session.id, BOB)  # the loser asks, and gets it
+
+    assert session.engine is not engine, "the old round was reset, not replaced"
+    assert not session.engine.over
+    assert session.engine.started, "a rematch does not make you press Start again"
+    assert session.id in board.sessions, "same session, same url, same sockets"
+
+
+def test_a_rematch_seats_everybody_where_they_were():
+    """Your seat is your colour, and in Pong it is your wall. Coming back to a
+    rematch as somebody else's colour would be a small, baffling betrayal."""
+    board = Lobby()
+    session = played_out(board)
+
+    board.rematch(session.id, ALICE)
+
+    assert session.engine.players == [ALICE.sub, BOB.sub]
+
+
+def test_a_rematch_is_a_new_round_of_the_same_session():
+    """The browser mounts a renderer once per round and throws confetti once per
+    round. Both hang off this number: the id is unchanged, so it is the only thing
+    that can tell them the board in front of them has been replaced."""
+    board = Lobby()
+    session = played_out(board)
+    assert session.summary()["sessionRound"] == 1
+
+    board.rematch(session.id, ALICE)
+
+    assert session.summary()["sessionRound"] == 2
+
+
+def test_a_game_still_being_played_cannot_be_rematched():
+    """Otherwise a stray click would throw away a board people are sitting at."""
+    board = Lobby()
+    session = board.create("tictactoe", ALICE)
+    board.join(session.id, BOB)
+    engine = session.engine
+
+    with rejected("lobby.not_over"):
+        board.rematch(session.id, ALICE)
+
+    assert session.engine is engine
+
+
+def test_a_spectator_cannot_rematch_a_game_they_were_not_in():
+    """Anyone signed in may open a game socket and watch. Watching is not playing,
+    and it does not come with a vote on restarting somebody else's game."""
+    board = Lobby()
+    session = played_out(board)
+    engine = session.engine
+
+    with rejected("lobby.not_playing"):
+        board.rematch(session.id, CAROL)
+
+    assert session.engine is engine
+
+
+def test_a_finished_game_is_back_in_the_listing_after_a_rematch():
+    board = Lobby()
+    session = played_out(board)
+    assert board.listing() == [], "a finished game is nobody's business"
+
+    board.rematch(session.id, ALICE)
+
+    assert [s["id"] for s in board.listing()] == [session.id]
+
+
+def test_a_rematch_gives_a_real_time_game_exactly_one_new_clock():
+    """The bug this is really about: the last round's clock breaks out of its loop
+    when the game ends, but it is still unwinding -- it awaits a final broadcast on
+    the way out. Its `finally` used to clear session.tick_task unconditionally, so
+    it would null out the NEW round's handle behind its back. The rematch after
+    that would find no clock to cancel and start a second one alongside the first:
+    two clocks, one engine, a game running at double speed.
+    """
+
+    async def scenario():
+        board = Lobby()
+        session = board.create("snake", ALICE)  # solo: born full, starts itself
+        await board.launch(session)
+
+        watcher = Watcher()
+        session.sockets.add((ALICE.sub, watcher))
+        session.note_sockets_changed()
+
+        # However the run ends, it ends inside tick(). Ending it by hand is the
+        # same thing to the clock, and it does not depend on where the apples fell.
+        session.engine.finish(Result.draw())
+        await asyncio.sleep(0)  # let the clock notice and start unwinding
+
+        board.rematch(session.id, ALICE)
+        await board.launch(session)
+        first = session.tick_task
+        assert first is not None, "the new round has a clock"
+
+        # Let the OLD clock's finally actually run, now that the new one is here.
+        await asyncio.sleep(0.05)
+        assert session.tick_task is first, (
+            "the dead clock cleared the live one's handle"
+        )
+
+        # And the world only turns once per tick, not twice.
+        elapsed = session.engine.elapsed
+        await asyncio.sleep(4 / session.engine.tick_hz)
+        turns = (session.engine.elapsed - elapsed) * session.engine.tick_hz
+        assert turns < 6, f"the game ran at {turns / 4:.1f}x speed: a second clock"
+
+        board.drop(session.id)
+
+    asyncio.run(scenario())
 
 
 def test_closing_a_game_hangs_up_on_everyone_watching():
