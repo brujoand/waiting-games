@@ -59,13 +59,22 @@
 // and that is exactly what the renderer was built to do.
 //
 // So the bound is set by what a player can stand, not by what a network can do.
-// One tick. Past that, holding on the cell and catching up afterwards is better
-// than being shown the past -- a snake that stutters can still be steered, and a
-// snake you are watching from a second ago cannot be steered at all.
 //
-// On a connection that delivers in clumps you cannot have both low latency and
-// smooth motion. Something has to give, and it is not going to be the steering.
-const MAX_DELAY_TICKS = 1;
+// On a line that delivers in clumps you cannot have both low latency and smooth
+// motion: buffer, and you are blind; catch up, and the snake surges. There is no
+// third option, and the exchange rate was measured rather than argued about --
+// replaying a phone's nap-and-flush through this renderer at every bound:
+//
+//     max delay    surging     median blindness
+//        0             40%            0ms
+//        1             22%           96ms
+//        1.5           14%          167ms   <-- the knee
+//        6             17%          211ms   <-- blind, and no smoother for it
+//
+// Past the knee, more delay buys NOTHING. It does not even buy smoothness -- it
+// just moves the snake further into the past. Six ticks, which is what this was,
+// is the worst of both: as jumpy as the knee and 44ms blinder. So: the knee.
+const MAX_DELAY_TICKS = 1.5;
 
 // How fast the render clock may run to pay off a hold. Coming off a hold, the
 // world is behind and has to catch up -- and cashing that in on one frame is a

@@ -60,7 +60,7 @@ export function enabled() {
  * measures the gap between two unrelated clocks, which is a large and very
  * convincing-looking number.
  */
-export function readout(root) {
+export function readout(root, board = null) {
   if (!enabled()) return null;
 
   const box = document.createElement("div");
@@ -81,7 +81,10 @@ export function readout(root) {
   // The live figures are a one-second window, because that is what you watch while
   // you play. The report is the WHOLE session, because the thing you are hunting
   // probably happened thirty seconds ago and is not on screen any more.
-  const all = { frames: 0, worstGap: 0, worstSpeed: 0, ahead: 0, behind: 0 };
+  const all = { frames: 0, worstGap: 0, worstSpeed: 0, ahead: 0, behind: 0, surging: 0 };
+  const gaps = []; // ms between one state landing and the next
+  let lastArrival = null;
+  let lastTick = null;
   let worstDelay = 0;
   let ignored = 0;
 
@@ -91,12 +94,49 @@ export function readout(root) {
   let reportedAt = 0;
   let latest = null;
 
+  // -- the raw input, counted BEFORE the game gets a look at it ---------------
+  //
+  // "I had to press rematch before the touch controls worked" is three different
+  // bugs and they need three different fixes, and nothing above can tell them
+  // apart. So count the events as the BROWSER delivers them, not as the game
+  // receives them:
+  //
+  //   touch 0            -- the finger never reached us at all. The listener is on
+  //                         the wrong element, or was never bound, or something is
+  //                         eating the gesture before it gets here.
+  //   touch N, cancel N  -- iOS took the gesture back to scroll the page with it.
+  //                         That is what pointercancel MEANS, and it is the classic
+  //                         way a swipe dies silently on a phone.
+  //   touch N, sent 0    -- we saw it and decided not to act: below the swipe
+  //                         threshold, or deduped as the way we were already going.
+  //   sent N, answered 0 -- it went, and the server threw it away.
+  //
+  // These listeners are passive and count only. They never preventDefault and never
+  // steer: the readout must not become a control surface, or it changes the very
+  // thing it is measuring.
+  const raw = { touch: 0, move: 0, cancel: 0, keys: 0, sent: 0 };
+  const stop = [];
+
+  if (board) {
+    const count = (element, type, bump) => {
+      const on = () => bump();
+      element.addEventListener(type, on, { passive: true });
+      stop.push(() => element.removeEventListener(type, on));
+    };
+    count(board, "pointerdown", () => (raw.touch += 1));
+    count(board, "pointermove", () => (raw.move += 1));
+    count(window, "pointercancel", () => (raw.cancel += 1));
+    count(window, "keydown", () => (raw.keys += 1));
+  }
+
   const since = (list, now) => {
     while (list.length && now - list[0].at > WINDOW_MS) list.shift();
     return list;
   };
   const median = (xs) =>
     xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)] : 0;
+  const pct90 = (xs) =>
+    xs.length ? [...xs].sort((a, b) => a - b)[Math.floor(xs.length * 0.9)] : 0;
 
   // The report is the thing worth having, and copying it is the thing that has to
   // work -- including on http://some-box:8080, where navigator.clipboard does not
@@ -159,12 +199,21 @@ export function readout(root) {
       `-- the arithmetic`,
       `speed         worst ${all.worstSpeed.toFixed(2)} cells/tick (1.00 is correct)`,
       ``,
+      `surging       ${all.frames ? ((100 * all.surging) / all.frames).toFixed(0) : 0}% of frames ran >1.1x (rubber-banding)`,
+      ``,
+      `-- the connection (what everything above is tuned against)`,
+      `state gaps    median ${gaps.length ? median(gaps).toFixed(0) : "-"}ms  ` +
+        `p90 ${gaps.length ? pct90(gaps).toFixed(0) : "-"}ms  worst ${gaps.length ? Math.max(...gaps).toFixed(0) : "-"}ms` +
+        `   (a tick is ${latest ? latest.tickMs.toFixed(0) : "?"}ms)`,
+      ``,
       `-- the input`,
+      `raw           touch ${raw.touch} down, ${raw.move} moves, ${raw.cancel} CANCELLED` +
+        `  |  keys ${raw.keys}  |  sent ${raw.sent}`,
       `key -> turn   ${answered} answered: ` +
         (answered ? turns.map((t) => `${t.toFixed(0)}ms`).join(" ") : "none"),
       `              mean ${answered ? Math.round(turns.reduce((a, b) => a + b, 0) / answered) : "-"}ms` +
         `, median ${answered ? median(turns).toFixed(0) : "-"}ms`,
-      `ignored       ${ignored} presses got no turn at all`,
+      `ignored       ${ignored} presses went out and got no turn at all`,
       ``,
       `screen        ${window.devicePixelRatio}x, ${window.innerWidth}x${window.innerHeight}`,
       `agent         ${navigator.userAgent}`,
@@ -183,7 +232,20 @@ export function readout(root) {
     pressed() {
       // Only the FIRST press of a turn is timed. Hammering the keys would
       // otherwise restart the stopwatch and report a latency of nothing.
+      raw.sent += 1;
       if (waitingFor === null) waitingFor = performance.now();
+    },
+
+    // A state landed. The GAPS between these are the connection's real character,
+    // and they are what everything else here is tuned against -- so they had better
+    // be measured on the machine that has the problem, and not modelled by somebody
+    // who does not. A laptop on ethernet delivers a metronome. A phone on wifi naps
+    // and flushes, and the difference between those two is the whole argument.
+    arrived(now, tick) {
+      if (tick === lastTick) return;
+      lastTick = tick;
+      if (lastArrival !== null) gaps.push(now - lastArrival);
+      lastArrival = now;
     },
 
     frame({ now, delayMs, path, head, tickMs, dropped, stateAge }) {
@@ -216,6 +278,10 @@ export function readout(root) {
           const speed = (Math.hypot(dx, dy) / gap) * tickMs;
           moves.push({ at: now, speed });
           all.worstSpeed = Math.max(all.worstSpeed, speed);
+          // Rubber-banding: the snake running visibly fast to pay off a hold. It is
+          // the price of NOT being blind, and it has to be counted, because the
+          // trade between the two is the only decision left to make here.
+          if (speed > 1.1) all.surging += 1;
         }
 
         // The turn has landed on screen the moment the head starts moving on the
@@ -256,10 +322,12 @@ export function readout(root) {
         `states/s    ${(1000 / tickMs).toFixed(1).padStart(5)}   dropped ${dropped}   age ${(stateAge ?? 0).toFixed(0)}ms`,
         `delay       ${delayMs.toFixed(0).padStart(5)}ms  drawn ${path}`,
         `key -> turn ${recent.length ? `${recent[recent.length - 1].toFixed(0)}`.padStart(5) : "    -"}ms  mean ${mean ?? "-"}ms  ignored ${ignored}`,
+        `input       touch ${raw.touch}  cancel ${raw.cancel}  keys ${raw.keys}  sent ${raw.sent}`,
       ].join("\n");
     },
 
     destroy() {
+      for (const off of stop) off();
       box.remove();
     },
   };
