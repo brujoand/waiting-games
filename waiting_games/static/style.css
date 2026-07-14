@@ -710,8 +710,7 @@ button:disabled {
 .t48-tile {
   display: grid;
   place-items: center;
-  position: relative; /* the +points float hangs off this */
-  z-index: 1; /* ...and every tile stands on the squares, not among them */
+  z-index: 1; /* every tile stands ON the squares, not among them */
   border-radius: 4px;
   background: #eee4da;
   color: #776e65;
@@ -771,24 +770,61 @@ button:disabled {
   box-shadow: 0 0 12px rgba(237, 194, 46, 0.8);
 }
 
-/* The three things that can happen to a tile, and they must not look alike.
-   Sliding is the trip itself, animated in js off the server's account of the move.
-   The other two are what a player has to read at the END of that trip:
+/* A move, in four beats. Nothing here happens at the same time as anything else --
+   that is the point, and it is why each beat can be read.
 
-   ARRIVING is the free tile. It was not there and now it is, so it fades up out of
-   nothing -- it never travelled, and must not look as though it did.
+   1. SLIDING. The trip, animated in js off the server's account of the move.
+   2. FUSING, also js: over the last stretch of the trip, a pair that is about to
+      merge shrinks and dims into itself, so the two tiles visibly become one thing
+      rather than being swapped for a third when nobody is looking.
+   3. MERGING -- this. What they became, blooming out of the size they fused down
+      to. It is the loudest thing on the board because it is the only thing that
+      scored, so it swells well past its own square: the merge is what you look at,
+      even when half the board moved.
+   4. ARRIVING. The free tile. It was not there and now it is, so it fades up out of
+      nothing -- it never travelled and must not look as though it did. It waits for
+      the bloom to finish before it starts, so the move and the board's answer to it
+      never compete for the eye. */
+.t48-merge {
+  /* It swells over its neighbours, and which of them wins is otherwise decided by
+     the order the tiles happen to sit in the dom -- so a merge against the left wall
+     would rise over the board while the same merge one square along was half-buried
+     under the tile beside it. It rises. */
+  z-index: 2;
+  animation: t48-merge 0.26s ease-out;
+}
 
-   MERGING is two tiles becoming one. They slide together and the survivor swells
-   past its own size before settling, which is the only moment on the board with
-   any weight to it: it is the move that scored. */
+@keyframes t48-merge {
+  /* Where the fusing left off -- FUSED in twentyfortyeight.js. If the two ever
+     disagree, the bloom starts with a jump. */
+  from {
+    transform: scale(0.78);
+  }
+
+  55% {
+    transform: scale(1.3);
+  }
+
+  to {
+    transform: scale(1);
+  }
+}
+
 .t48-arrive {
-  animation: t48-arrive 0.14s ease-out;
+  /* The delay is what keeps this the LAST beat -- it holds the new tile back until
+     the bloom has had its moment, so the move and the board's answer to it never
+     compete for the eye. It shortens with the rest of them, and must never shorten
+     so far that the two overlap.
+
+     `backwards` is load-bearing: without it the tile sits at full opacity through
+     the delay and then fades in from nothing, which is a flicker, not an arrival. */
+  animation: t48-arrive 0.22s ease-out 0.18s backwards;
 }
 
 @keyframes t48-arrive {
   from {
     opacity: 0;
-    transform: scale(0.4);
+    transform: scale(0.3);
   }
 
   to {
@@ -797,64 +833,13 @@ button:disabled {
   }
 }
 
-.t48-merge {
-  animation: t48-merge 0.16s ease-out;
-}
-
-@keyframes t48-merge {
-  from {
-    transform: scale(0.9);
-  }
-
-  55% {
-    transform: scale(1.16);
-  }
-
-  to {
-    transform: scale(1);
-  }
-}
-
-/* What the merge paid, leaving the tile that earned it. It drifts up off the tile
-   and over whatever is behind it -- the board, a neighbour, any colour in the ramp
-   -- so it carries its own contrast rather than trusting the one background it
-   happened to start on. */
-.t48-gain {
-  position: absolute;
-  top: -0.2em;
-  right: -0.1em;
-  color: #776e65;
-  font-size: 0.55em;
-  font-weight: 700;
-  text-shadow: 0 0 3px rgba(249, 246, 242, 0.9);
-  pointer-events: none;
-  animation: t48-gain 0.6s ease-out forwards;
-}
-
-@keyframes t48-gain {
-  from {
-    opacity: 0.9;
-    transform: translateY(0);
-  }
-
-  to {
-    opacity: 0;
-    transform: translateY(-1.2em);
-  }
-}
-
 /* The board still has to be READABLE without any of it -- so the tiles stop
    moving, they do not stop existing. js skips the slide for the same reason; this
    is what catches the css half. */
 @media (prefers-reduced-motion: reduce) {
   .t48-arrive,
-  .t48-merge,
-  .t48-gain {
+  .t48-merge {
     animation: none;
-  }
-
-  .t48-gain {
-    display: none;
   }
 }
 
