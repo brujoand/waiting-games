@@ -67,6 +67,47 @@ test("the snake on screen is the snake the server has, at every tick rate", () =
   }
 });
 
+test("sitting in the lobby before pressing Start does not kill the interpolation", () => {
+  // THE ONE THE READOUT CAUGHT, off a phone, in a single round -- and the one every
+  // harness in this file missed, because they all start the clock with the game
+  // already running. A real player does not. They open a board, it sits in the
+  // LOBBY, and the lobby pushes state carrying `tick: 0`, because a real-time game
+  // reports its clock whether or not that clock has started. The browser takes that
+  // tick 0 and anchors `origin` -- its estimate of when the server's clock began --
+  // to the moment it arrived.
+  //
+  // Then somebody presses Start, ten seconds later.
+  //
+  // `origin` is a min(), and a min never forgets. Every tick of the game that
+  // follows now measures as TEN SECONDS LATE, for ever, against an origin ten
+  // seconds too early that nothing can talk it out of. The delay pins to the
+  // ceiling, the render clock runs permanently past the newest state, the clamp
+  // holds it at alpha = 1 -- and alpha = 1 draws the snake ON the cell it is
+  // travelling towards, every frame, and never once between two cells.
+  //
+  // The interpolation does not break. It silently STOPS HAPPENING. The snake
+  // teleports a whole cell six times a second -- exactly the thing this file exists
+  // to prevent -- and not one line of it reports an error.
+  const clock = timeline(HZ);
+  const LOBBY = 10_000; // ten seconds of somebody deciding whether to play
+
+  clock.accept(stateAt(0), 0, 0); // a board waiting, with a clock not yet running
+  for (let k = 1; k < 40; k += 1) clock.accept(stateAt(k), k, LOBBY + k * TICK);
+
+  assert.equal(clock.debug().delayTicks, 0, "the lobby poisoned the clock");
+
+  // ...and the proof that actually matters: the snake is drawn BETWEEN cells.
+  const alphas = [];
+  for (let f = 0; f < 10; f += 1) {
+    alphas.push(clock.read(LOBBY + 39 * TICK + f * (1000 / 60)).alpha);
+  }
+  assert.ok(
+    alphas.some((a) => a > 0.05 && a < 0.95),
+    `alpha never left the cell, so the snake is teleporting: ` +
+      `${alphas.map((a) => a.toFixed(2)).join(" ")}`,
+  );
+});
+
 test("a clean line buys no delay at all, because there is nothing left to wait for", () => {
   // The delay IS latency: every millisecond of it is a millisecond later that you
   // see your own turn. It used to be 1.5 ticks and could not be less, because a
