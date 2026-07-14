@@ -217,6 +217,19 @@ class RealTimeGame(Game):
 
     tick_hz: float = 15.0
 
+    def __init__(self) -> None:
+        super().__init__()
+        # Which tick this is. The CLOCK advances it -- see lobby._tick_forever --
+        # not the game, so a subclass cannot forget to.
+        #
+        # It is on the wire because the browser cannot otherwise tell one tick
+        # from two. A smooth game slides between the states it is sent, and how
+        # far to slide depends entirely on how much game time separates them; a
+        # state that never arrived (lobby.stream() drops frames at a busy socket,
+        # deliberately) is then indistinguishable from a state that is merely
+        # late. Guessing that from arrival times is what made Snake teleport.
+        self.ticks: int = 0
+
     def _may_move(self, seat: int) -> bool:
         return True
 
