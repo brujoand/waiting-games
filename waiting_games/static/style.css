@@ -791,7 +791,7 @@ button:disabled {
      would rise over the board while the same merge one square along was half-buried
      under the tile beside it. It rises. */
   z-index: 2;
-  animation: t48-merge 0.3s ease-out;
+  animation: t48-merge 0.26s ease-out;
 }
 
 @keyframes t48-merge {
@@ -811,9 +811,14 @@ button:disabled {
 }
 
 .t48-arrive {
-  /* `backwards` is load-bearing: without it the tile sits at full opacity through
+  /* The delay is what keeps this the LAST beat -- it holds the new tile back until
+     the bloom has had its moment, so the move and the board's answer to it never
+     compete for the eye. It shortens with the rest of them, and must never shorten
+     so far that the two overlap.
+
+     `backwards` is load-bearing: without it the tile sits at full opacity through
      the delay and then fades in from nothing, which is a flicker, not an arrival. */
-  animation: t48-arrive 0.26s ease-out 0.22s backwards;
+  animation: t48-arrive 0.22s ease-out 0.18s backwards;
 }
 
 @keyframes t48-arrive {

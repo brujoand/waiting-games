@@ -38,18 +38,21 @@ const ARROWS = {
   d: { dir: "right" },
 };
 
-// Slow enough to WATCH.
+// Four beats, and nothing overlaps anything else -- which is the whole trick, since
+// two things at once are one thing you cannot see. The tiles travel; THEN the pair
+// that met draws itself together; THEN what they became blooms; and only THEN does
+// the free tile fade up.
 //
-// This was 110ms, which is roughly what the original game uses, and it was too
-// quick to follow: the tiles were plainly moving and you still could not say which
-// ones had. A move is something to be READ, and the board is only ever waiting on
-// the player -- it can afford to take its time.
+// The timings went 110ms -> 190 -> 240 while the move was still being made legible,
+// and the last of that was a crutch. A move was hard to follow because the merge
+// had nothing drawn for the moment it happened, and slowing everything down was a
+// way of buying time to squint. Now that the pair visibly fuses, the beats say what
+// they are and do not need the extra room to say it -- so it comes back in. What
+// remains slow is slow on purpose: it is separation that makes a move readable, not
+// duration, and the clock only has to be generous enough to keep the beats apart.
 //
-// Nothing here overlaps anything else, which is the whole trick: two things at once
-// are one thing you cannot see. The tiles travel; THEN the pair that met draws
-// itself together; THEN what they became blooms; and only THEN does the free tile
-// fade up. Half a second, in four beats you can name.
-const SLIDE_MS = 240;
+// 190ms, and about four-tenths of a second end to end.
+const SLIDE_MS = 190;
 
 // The last stretch of the trip, where a pair about to merge stops being two tiles.
 // They shrink and dim INTO each other as they land, so a merge reads as two things
