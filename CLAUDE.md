@@ -87,6 +87,26 @@ Two things to get right:
   the renderer waiting. Send the cell, and the browser draws the move as it
   happens instead of a cell after it did.
 
+- **A game with one player and no hidden information can be played in the
+  BROWSER** — say so with `client_clock`, and the lobby gives it no clock. Solo
+  Snake is the worked example, and the reason is not elegance: measured on a real
+  phone, our states arrived a median of 168ms apart (the tick, exactly), p90
+  333ms, worst **2439ms**, with nothing dropped. You cannot steer a game you are
+  told about two seconds late, and no renderer fixes that — the packet has to come
+  out of the render loop. The run is a pure function of `(seed, moves, ticks)`, so
+  the browser plays it and the server **replays it** to find out what really
+  happened (`Game.run`, and the `result` message). It is not trust, it is
+  arithmetic. Such a renderer gets `publish` (show the platform the board it is
+  actually playing) and `finish` (hand the run over to be checked).
+- **Two rulebooks drift.** A client-run game means its rules exist twice —
+  `snake.py` and `static/games/snake_rules.js` — and the drift would not look like
+  a broken build, it would look like a player who died on their own screen and
+  lived on the server's. `tests/test_determinism.py` runs the same seed and moves
+  through both and demands the same board, cell for cell. That test is the only
+  thing making this safe. Nothing may be random that both sides cannot compute:
+  `random.Random` is a Mersenne Twister and the browser has no such thing, hence
+  `games/_rng.py` and its twin.
+
 A game's `key` is also its renderer's filename. Renaming one renames both.
 
 ## Language

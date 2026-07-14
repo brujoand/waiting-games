@@ -327,7 +327,9 @@ def test_a_rematch_gives_a_real_time_game_exactly_one_new_clock():
 
     async def scenario():
         board = Lobby()
-        session = board.create("snake", ALICE)  # solo: born full, starts itself
+        session = board.create("snake", ALICE)
+        board.join(session.id, BOB)  # two snakes, so the SERVER owns the clock
+        board.begin(session.id, ALICE)
         await board.launch(session)
 
         watcher = Watcher()
