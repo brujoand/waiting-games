@@ -6,7 +6,7 @@
 
 import { t } from "../i18n.js";
 import { COLOURS, canvas, hint, keys, onChange, swipe } from "./_canvas.js";
-import { at, timeline } from "./_interpolate.js";
+import { ahead, at, timeline } from "./_interpolate.js";
 
 // Swipe on a phone; the arrow keys (or WASD) on anything with them.
 const SWIPES = {
@@ -28,26 +28,25 @@ const ARROWS = {
 };
 
 export function create({ root, me, send }) {
-  // Snake moves ONE WHOLE CELL per tick, at 6 Hz. Drawn at the cell it is on, it
-  // therefore teleports a full grid square six times a second, and no amount of
-  // repainting at 60 fps helps: the thing being painted only changes 6 times a
-  // second. That is the choppiness, and it is not a dropped-frame problem -- it
-  // is what the game looks like when you draw it honestly.
+  // Snake moves ONE WHOLE CELL per tick. Drawn at the cell it is on, it therefore
+  // teleports a full grid square six times a second, and no amount of repainting
+  // at 60 fps helps: the thing being painted only changes 6 times a second. That
+  // is the choppiness, and it is not a dropped-frame problem -- it is what the
+  // game looks like when you draw it honestly.
   //
-  // So draw it dishonestly, by a fraction of a second. The timeline buffers the
-  // states and hands back the moment we should be drawing; each segment walks its
-  // own body back to where it was. The rules do not change, the wire does not
-  // change; only the pixels between two states the server already agreed on.
+  // So slide it between cells. That used to mean drawing the world a tick in the
+  // past, because a slide needs the cell it is going TO and only the server knew
+  // it -- and a tick in the past is a whole CELL in the past, at any tick rate.
+  // Now the server sends the cell each snake is about to take (`next`), so the
+  // slide is drawn while the move is happening rather than after it happened.
+  // Nothing here is a guess, and nothing is a cell behind.
   let clock = null;
 
   const board = canvas(root, (context, side) => {
     const frame = clock?.read(performance.now());
     if (!frame) return;
 
-    // One state is enough to draw a slide, because a snake carries its history in
-    // its body -- see at(). `span` is how many ticks of travel it covers: 1
-    // normally, 2 if a state never reached us, 0 if there is nothing to slide.
-    paint(context, side, frame.state, frame.alpha, frame.span, me);
+    paint(context, side, frame, me);
   });
   hint(root, t("snake.hint"));
 
@@ -79,7 +78,8 @@ export function create({ root, me, send }) {
   };
 }
 
-function paint(context, side, game, alpha, span, me) {
+function paint(context, side, frame, me) {
+  const game = frame.state;
   const cell = side / game.width;
 
   context.fillStyle = "rgba(127, 140, 160, 0.10)";
@@ -92,22 +92,22 @@ function paint(context, side, game, alpha, span, me) {
     context.fill();
   }
 
+  // Forwards into the move the server says is coming, or -- when a state went
+  // missing and we are behind -- backwards down the body towards the state we
+  // did get. A dead snake is not going anywhere at all: it dies WITHOUT moving,
+  // so its body still reads as a perfectly good path, and walking it in either
+  // direction would drag the corpse off the cell it died on. Both walks refuse.
+  const where = (snake, index) =>
+    frame.ahead
+      ? ahead(snake, index, frame.alpha)
+      : at(snake, index, frame.alpha, snake.alive ? frame.span : 0);
+
   game.snakes.forEach((snake, seat) => {
     context.fillStyle = COLOURS[seat % COLOURS.length];
     context.globalAlpha = snake.alive ? 1 : 0.25;
 
-    // A dead snake is not going anywhere. Sliding a corpse would be worse than
-    // leaving it where it fell -- and it fell exactly where the server says. A
-    // span of 0 says "draw it where it is" all the way down.
-    //
-    // It also has to be said rather than inferred: a snake dies WITHOUT moving --
-    // the engine leaves its cells alone on the tick it kills it -- so its body
-    // still reads as a perfectly good path, and walking it would slide the corpse
-    // backwards along itself.
-    const travel = snake.alive ? span : 0;
-
     snake.cells.forEach((_, index) => {
-      const [x, y] = at(snake, index, alpha, travel);
+      const [x, y] = where(snake, index);
       const inset = index === 0 ? 0 : cell * 0.08; // the head is a little bigger
       context.fillRect(
         x * cell + inset,
@@ -119,7 +119,7 @@ function paint(context, side, game, alpha, span, me) {
 
     // Ring your own head so you can find yourself in a six-snake scrum.
     if (snake.player === me.sub && snake.alive) {
-      const [hx, hy] = at(snake, 0, alpha, travel);
+      const [hx, hy] = where(snake, 0);
       context.strokeStyle = "#fff";
       context.lineWidth = 2;
       context.strokeRect(hx * cell + 1, hy * cell + 1, cell - 2, cell - 2);

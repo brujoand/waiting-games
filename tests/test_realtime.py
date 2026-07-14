@@ -45,6 +45,23 @@ def run(game, ticks, dt=None):
         game.tick(step)
 
 
+def staged(game):
+    """Let the engine look at a board that a test placed by hand.
+
+    A snake's next move is DECIDED a tick before it is made, and goes out with
+    the state -- which is what lets the browser draw the move while it happens
+    instead of a cell after it did. So a tick carries out the move worked out at
+    the end of the tick before, and a test that rewrites the board behind the
+    engine's back has to give it the chance to work one out for the board it now
+    actually has.
+
+    Nothing in a real game needs this. Cells only ever move because _execute
+    moved them, and _decide runs on the very same tick.
+    """
+    game._decide()
+    return game
+
+
 # ==========================================================================
 # Snake
 # ==========================================================================
@@ -62,17 +79,58 @@ def test_a_snake_moves_on_its_own_with_no_input_at_all():
     assert game.snakes[0].head == (before[0] + 1, before[1])  # it starts facing right
 
 
-def test_steering_is_intent_and_only_lands_on_the_next_tick():
-    game = seat(Snake, players=(A,))
-    game.apply_move(A, {"dir": "down"})
+def test_steering_lands_on_the_move_after_the_one_already_in_flight():
+    """A move is DECIDED a tick before it is made, so your key lands on the move
+    after the one every browser is already drawing.
 
-    # The move has been recorded, but nothing has moved yet.
-    assert game.snakes[0].pending == "down"
-    assert game.snakes[0].heading == "right"
+    That is not a tick of latency added -- it is the tick you always waited,
+    moved to where it can be SEEN. The renderer used to draw the world a tick in
+    the past, because a slide needs the cell it is going to and only the server
+    knew it. A tick in the past is one whole CELL in the past, in a game that
+    moves one cell per tick, and that cell is why the snake never went where you
+    pointed it. Now the cell is on the wire before it is needed, the browser
+    draws the move as it happens, and the net is half a tick to see your own turn
+    where it used to be a tick and a half."""
+    game = seat(Snake, players=(A,))
+    snake = game.snakes[0]
+
+    # It is already committed to carrying on right: that is the move on screen.
+    assert snake.step.heading == "right"
+
+    game.apply_move(A, {"dir": "down"})
+    assert snake.pending == "down"  # recorded...
+    assert snake.step.heading == "right"  # ...but the move in flight is untouched
 
     game.tick(1 / game.tick_hz)
+    assert snake.heading == "right"  # it made the move it was committed to
+    assert snake.step.heading == "down"  # ...and is now committed to yours
 
-    assert game.snakes[0].heading == "down"
+    game.tick(1 / game.tick_hz)
+    assert snake.heading == "down"
+
+
+def test_a_snake_cannot_reverse_into_the_neck_it_is_about_to_have():
+    """The no-reverse rule is judged against the move in FLIGHT, not the one last
+    made -- and once a move is decided a tick ahead, those are different
+    directions and the difference is a folded snake.
+
+    Turn down. On the next tick the snake moves right (the move it was already
+    committed to) and takes on `down` for the one after, which every browser is
+    now drawing. Ask for up. The last direction TRAVELLED is still rightwards, off
+    which up is a perfectly ordinary turn -- so a check against it says yes, and
+    the snake goes down and then straight back up through its own neck. It has to
+    be judged against down, which is where the snake is actually going."""
+    game = seat(Snake, players=(A,))
+    snake = game.snakes[0]
+
+    game.apply_move(A, {"dir": "down"})
+    game.tick(1 / game.tick_hz)
+
+    assert snake.heading == "right"  # what it last did...
+    assert snake.step.heading == "down"  # ...and what it is about to do
+
+    with rejected("snake.no_reverse"):
+        game.apply_move(A, {"dir": "up"})
 
 
 def test_a_snake_cannot_reverse_into_its_own_neck():
@@ -142,7 +200,7 @@ def test_two_snakes_meeting_head_on_both_die():
     bob.heading = bob.pending = "left"
     game.apples = []
 
-    run(game, 1)
+    run(staged(game), 1)
 
     assert not alice.alive
     assert not bob.alive
@@ -163,7 +221,7 @@ def test_two_snakes_cannot_swap_places_through_each_other():
     bob.heading = bob.pending = "left"
     game.apples = []
 
-    run(game, 1)
+    run(staged(game), 1)
 
     assert not alice.alive
     assert not bob.alive
@@ -182,7 +240,7 @@ def test_a_snake_may_follow_a_tail_that_is_moving_out_of_the_way():
     alice.cells = [(11, 5), (10, 5), (9, 5)]
     alice.heading = alice.pending = "right"
 
-    run(game, 1)
+    run(staged(game), 1)
 
     assert alice.alive  # she moved into a cell that was being vacated
     assert alice.head == (12, 5)

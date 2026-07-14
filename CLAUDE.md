@@ -72,6 +72,13 @@ Two things to get right:
   then *intent*: `tick()` decides what actually happens and when the game ends,
   and the tick loop — not the move handler — broadcasts. Don't echo real-time
   input back; it turns held keys into a fan-out storm.
+- **If it moves in whole cells, decide each move a tick early and put it on the
+  wire** — Snake's `next`. A renderer can only slide between two cells it knows,
+  so if the far one is a secret until the tick fires it must draw the world a
+  tick in the past — and one tick is one whole CELL of lag, at every tick rate
+  there is. That cell is not a speed problem and no tick rate fixes it: it is
+  the renderer waiting. Send the cell, and the browser draws the move as it
+  happens instead of a cell after it did.
 
 A game's `key` is also its renderer's filename. Renaming one renames both.
 
