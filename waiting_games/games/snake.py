@@ -1,43 +1,38 @@
-"""Snake, off the grid.
+"""Snake: steer your snake, eat the apples, don't crash. Last snake alive wins.
 
-The head is at (11.37, 4.02). Not cell (11, 4) -- there are no cells. It travels
-along a real line at a real speed, it turns the moment you ask it to rather than at
-the next square, and it eats an apple by running into it rather than by landing
-exactly on it.
+The first real-time game. There are no turns: every player may steer on every
+tick, and a move is INTENT ("I am now heading left") that the clock acts on -- it
+does not move the snake by itself. That is what stops a held arrow key from
+turning into a message per frame.
 
--- why, and it is not cosmetic ---------------------------------------------
+Solo is a first-class mode (min_players = 1): survive as long as you can, and
+your length is the score.
 
-A grid game cannot be played over a network, and it took a week to find out.
+-- why a move is DECIDED a tick before it HAPPENS ---------------------------
 
-On a grid, the SMALLEST error the wire can hand you is one whole cell -- there is
-nothing between cell 5 and cell 6 -- and one cell is precisely the granularity that
-decides whether you are alive. A packet 300ms late did not make the game a little
-bit wrong. It made you dead. Every attempt to fix that (interpolate, buffer,
-predict, decide the move a tick early, bound the delay, catch up gently) was an
-attempt to hide a quantum the same size as the game, and none of them could.
+A tick used to read the intent standing at the instant it fired, and move. That
+is the obvious design and it makes the game unsteerable, for a reason that has
+nothing to do with the rules and everything to do with the fact that a snake is
+drawn moving and the server moves it in jumps.
 
-Off the grid, that same 300ms puts you a fifth of a unit out of place. A fifth of a
-unit is a smudge nobody can see, and it changes the TIMING of a collision by a few
-milliseconds instead of flipping whether it happened at all.
+The browser has to slide the snake between cells or it lurches a whole square six
+times a second. It can only slide between two cells it knows -- so it has to wait
+for the far one, which means drawing the snake a cell behind where the server has
+already put it. That cell is the lag: you steer the snake you can SEE, and it is
+not the one the server has. Slowing the game down cannot help, because the delay
+is one tick and a tick IS one cell, at every possible tick rate.
 
-That is the property the .io games have and we did not. Not smoothness -- forgiveness.
+So decide each move one tick early and say so. `step` is what a snake WILL do on
+the next tick -- the cell it takes, or nothing if that move kills it -- fixed at
+the end of the tick before, and sent out with the state. The browser is then
+animating a move that has already been decided rather than guessing at one, so it
+can draw it AS IT HAPPENS, in real time, with no cell of delay and nothing to
+snap back from when the guess was wrong.
 
--- floats are fine. sin, cos and sqrt are not. -----------------------------
-
-Every number here moves through + - * / only, on IEEE-754 doubles, which Python and
-JavaScript specify identically to the last bit. Distances are compared SQUARED so
-that no square root is ever taken. There is no angle anywhere, which is exactly why
-the snake turns in four directions rather than through a full circle.
-
-That is not taste, it is the price of the safety net. The browser plays a solo game
-itself and the server replays it afterwards to check the score (see client_clock),
-and a rollback for multiplayer would need the same guarantee. Both rest on the two
-simulations agreeing EXACTLY -- and one transcendental function, which its standard
-permits to differ in the last bit, would be two different games.
-
-The twin of this file is static/games/snake_rules.js. tests/test_determinism.py runs
-the same seed and the same moves through both and demands the same board, down to
-the last bit of the last float.
+What it costs is that your key lands on the move after the one already in flight.
+That is not new latency -- it is the same tick you always waited, moved to where
+it can be seen -- and it nets out FASTER, because the screen stops being a cell
+behind. Half a tick to see your own turn, where it used to be a tick and a half.
 """
 
 from __future__ import annotations
@@ -49,121 +44,59 @@ from dataclasses import dataclass
 from ._rng import Rng
 from .base import InvalidMove, RealTimeGame, Result
 
-# 24 units square. It was 24 CELLS square, and a unit is what a cell was, so the
-# board is the same size and the snake the same speed as the game people were
-# playing. It simply is not made of squares any more.
-BOARD = 24.0
-
-# Units per second. This used to BE the tick rate -- the snake moved one cell per
-# tick, so speed and clock were the same number and neither could be tuned without
-# the other. They are separate now, which is the whole point of what follows.
-SPEED = 6.0
-
-# ...so the clock is free, and a shared game wants it fast. At 20 Hz a packet carries
-# 50ms of world and 0.3 units of movement. At 6 Hz it carried 167ms and a WHOLE CELL.
-# Smaller packets, smaller errors -- and no error that can kill you on its own.
-TICK_HZ = 20.0
-
-START_LENGTH = 3.0  # units of body
-GROWTH = 2.0  # ...gained per apple
+WIDTH = HEIGHT = 24
+START_LENGTH = 3
 APPLES = 3
-
-HEAD_R = 0.45
-BODY_R = 0.40
-APPLE_R = 0.40
-
-# How much of your own body, measured back from the head, cannot kill you.
-#
-# On a grid the neck was one cell and the rule was "no reversing". Off the grid you
-# may turn whenever you like, so a quick left-then-left brings the head alongside its
-# own neck within a fraction of a unit. Without this the game would kill you for
-# turning twice in a hurry, which is not a rule anyone would call fair.
-NECK = 1.6
-
-# How far the snake must travel between one turn and the next.
-#
-# The grid gave us this for free and off the grid we have to say it out loud. You can
-# now turn wherever you like -- so turn down, and a fifth of a unit later turn left,
-# and the snake is running PARALLEL TO ITS OWN BODY a fifth of a unit away, when the
-# body is four fifths of a unit wide. It is inside itself. No neck length fixes that;
-# it is geometry.
-#
-# Every game with a body and a free heading has this problem and they all answer it the
-# same way: a minimum turning radius. slither.io caps how fast you can swing round.
-# Ours is four directions, so the cap is a distance -- one body-width and a bit, which
-# is exactly the separation two parallel runs need in order not to touch.
-#
-# And it is SOFT. Ask too early and the turn is remembered, not refused, and taken the
-# moment it becomes legal. So an early press still works and a late one just turns you
-# a little further along -- which is the whole point of leaving the grid. The
-# discipline is back; the fatal quantum is not.
-MIN_TURN = 1.0
+GROWTH = 2  # cells gained per apple
 
 DIRECTIONS = {
-    "up": (0.0, -1.0),
-    "down": (0.0, 1.0),
-    "left": (-1.0, 0.0),
-    "right": (1.0, 0.0),
+    "up": (0, -1),
+    "down": (0, 1),
+    "left": (-1, 0),
+    "right": (1, 0),
 }
 
 
-def _reach2(a: float, b: float) -> float:
-    """(a + b) squared. Everything here compares squared distances."""
-    return (a + b) * (a + b)
-
-
-def _distance2_to_segment(
-    px: float, py: float, ax: float, ay: float, bx: float, by: float
-) -> float:
-    """How far a point is from a segment, SQUARED.
-
-    Squared, always. A square root is allowed by its own standard to differ in the
-    last bit between implementations, and one differing bit is two different games.
-    """
-    vx, vy = bx - ax, by - ay
-    wx, wy = px - ax, py - ay
-
-    span = vx * vx + vy * vy
-    if span == 0.0:  # a corner: the segment is a single point
-        return wx * wx + wy * wy
-
-    along = (wx * vx + wy * vy) / span
-    if along < 0.0:
-        along = 0.0
-    elif along > 1.0:
-        along = 1.0
-
-    dx = px - (ax + vx * along)
-    dy = py - (ay + vy * along)
-    return dx * dx + dy * dy
-
-
 @dataclass
-class SnakeBody:
-    """A snake is a PATH, not a list of cells.
+class Step:
+    """What a snake does on the NEXT tick. Decided at the end of this one.
 
-    `path` is the polyline it occupies, head first. A vertex appears only where it
-    TURNS -- between corners it is a straight run and the head just slides along it --
-    so a snake that has gone straight for a minute is two points, not four hundred.
+    This is the whole contract with the renderer: it is a fact about a tick that
+    has not happened yet, which is what lets the browser draw the move while it is
+    happening instead of a cell after it did.
     """
 
-    path: list[list[float]]
     heading: str
-    pending: str = ""
-    length: float = START_LENGTH
-    growing: float = 0.0
-    alive: bool = True
-    # Distance travelled since the last corner. A snake may not turn inside its own
-    # width -- see MIN_TURN -- so a turn asked for too early WAITS rather than being
-    # thrown away.
-    straight: float = MIN_TURN
-
-    def __post_init__(self) -> None:
-        self.pending = self.pending or self.heading
+    to: tuple[int, int] | None  # the cell the head takes; None if the move kills it
+    grows: bool  # ...and whether the tail stays put, because it ate
 
     @property
-    def head(self) -> list[float]:
-        return self.path[0]
+    def fatal(self) -> bool:
+        return self.to is None
+
+
+class SnakeBody:
+    def __init__(self, cells: list[tuple[int, int]], heading: str) -> None:
+        self.cells = cells  # head first
+        self.heading = heading  # the direction of the move it last made
+        self.pending = heading  # ...and the one the player has asked for since
+        self.growing = 0
+        self.alive = True
+        self.step: Step | None = None  # what it does next: set by _decide()
+
+    @property
+    def head(self) -> tuple[int, int]:
+        return self.cells[0]
+
+    @property
+    def facing(self) -> str:
+        """The direction it will be travelling once its next move is made.
+
+        Not the one it last travelled. By the time a fresh intent can be acted on,
+        the move already in flight has happened -- so this is the direction the
+        neck will be in, and the direction a reversal has to be judged against.
+        """
+        return self.step.heading if self.step else self.heading
 
 
 class Snake(RealTimeGame):
@@ -171,76 +104,118 @@ class Snake(RealTimeGame):
     title = "Snake"
     min_players = 1
     max_players = 6
-    tick_hz = TICK_HZ
+    # The snake moves one cell per tick, so this IS the speed -- there is no
+    # separate difficulty knob, and there must not be one. It was 8 Hz, which
+    # players found too fast to steer: a 24-cell board crossed in three seconds
+    # leaves about a sixth of a second to see a wall coming and do something
+    # about it. 6 Hz gives you a third.
+    #
+    # It is on the wire (public_state), and the renderer slides the snake across
+    # exactly this interval, so tuning it here is the whole change.
+    tick_hz = 6.0
 
     def __init__(self, seed: int | None = None) -> None:
         super().__init__()
         self.snakes: list[SnakeBody] = []
-        self.apples: list[list[float]] = []
+        self.apples: list[tuple[int, int]] = []
         self.elapsed = 0.0
 
+        # The seed goes ON THE WIRE, and it is what lets the browser run this game
+        # itself rather than watch a recording of it over a radio that keeps
+        # falling asleep. Same seed, same rules, same apples, same death -- so a
+        # solo run needs no packet in its render loop at all, and the server can
+        # still check the score afterwards by replaying it.
+        #
+        # Which means the generator cannot be `random`: a Mersenne Twister cannot
+        # be written twice. See _rng.py.
         self.seed = secrets.randbelow(2**32) if seed is None else seed & 0xFFFFFFFF
         self.rng = Rng(self.seed)
 
     @property
     def client_clock(self) -> bool:
-        """Solo is played in the browser and checked here. See base.RealTimeGame."""
+        """Solo is played in the browser and checked here. See base.RealTimeGame.
+
+        One snake, one input stream, one seed -- so the browser can simply play it,
+        and a phone stops being at the mercy of a radio that naps through our ticks.
+        The moment there are two snakes there is a collision to arbitrate, and that
+        is the server's job and nobody else's.
+        """
         return len(self.players) == 1
 
-    # -- the world -------------------------------------------------------
+    def run(self, moves: list[dict], ticks: int) -> None:
+        """Play the run the browser says it played, and see what really happened.
+
+        The run is a pure function of the seed we handed out, the moves the player
+        made, and the ticks they took -- so we simply make it again, here, and look
+        at the board ourselves. The score is not taken on trust; it is recomputed.
+
+        A client that lies about its score gets the score its moves actually earn. A
+        client that lies about its MOVES has merely played the game well, which is
+        what it was invited to do.
+        """
+        at_tick: dict[int, list[dict]] = {}
+        for move in moves:
+            at_tick.setdefault(int(move["tick"]), []).append(move)
+
+        for tick in range(ticks):
+            for move in at_tick.get(tick, []):
+                with contextlib.suppress(InvalidMove):
+                    # A move rejected here is one the browser's own copy of the
+                    # rules rejected too -- it is the same rulebook, pinned by
+                    # tests/test_determinism.py. Suppressing it keeps a replay
+                    # checking the OUTCOME rather than re-litigating every keypress.
+                    self.apply_move(self.players[0], {"dir": move["dir"]})
+            if self.over:
+                return
+            self.tick(1 / self.tick_hz)
 
     def _on_start(self) -> None:
         """Space the snakes evenly down the board, all facing right."""
-        self.rng = Rng(self.seed)  # a replay must begin where the run did
+        # From here the game is a pure function of (seed, the moves, the ticks).
+        # Restarting the generator here rather than in __init__ is what makes that
+        # true: a replay must begin from the same place the run did.
+        self.rng = Rng(self.seed)
         self.snakes = []
-
-        seats = len(self.players)
-        for seat in range(seats):
-            row = BOARD * (seat + 1) / (seats + 1)
-            self.snakes.append(
-                SnakeBody(path=[[START_LENGTH + 1.0, row], [1.0, row]], heading="right")
-            )
+        for seat in range(len(self.players)):
+            row = (seat + 1) * HEIGHT // (len(self.players) + 1)
+            cells = [(START_LENGTH - i, row) for i in range(START_LENGTH)]
+            self.snakes.append(SnakeBody(cells, "right"))
 
         self.apples = []
         for _ in range(APPLES):
             self._grow_an_apple()
 
-    def _clear(self, x: float, y: float, clearance: float) -> bool:
-        for apple in self.apples:
-            dx, dy = x - apple[0], y - apple[1]
-            if dx * dx + dy * dy < _reach2(clearance, APPLE_R):
-                return False
+        # The first tick executes a move like every other one, so there has to be
+        # a move for it to execute.
+        self._decide()
 
-        for snake in self.snakes:
-            if not snake.alive:
-                continue
-            for i in range(len(snake.path) - 1):
-                a, b = snake.path[i], snake.path[i + 1]
-                if _distance2_to_segment(x, y, a[0], a[1], b[0], b[1]) < _reach2(
-                    clearance, BODY_R
-                ):
-                    return False
-        return True
+    # -- the world -------------------------------------------------------
+
+    def _occupied(self) -> set[tuple[int, int]]:
+        taken = {cell for snake in self.snakes if snake.alive for cell in snake.cells}
+        taken.update(self.apples)
+        return taken
 
     def _grow_an_apple(self) -> None:
-        """Somewhere free, by rejection, in a BOUNDED number of tries.
-
-        The browser runs this too and must take exactly as many tries as we do, off
-        exactly the same generator -- so the loop is bounded and depends on nothing
-        but the state both sides already share.
-        """
-        margin = APPLE_R + 0.2
-        span = BOARD - margin - margin
-
-        for _ in range(64):
-            x = margin + self.rng.unit() * span
-            y = margin + self.rng.unit() * span
-            if self._clear(x, y, APPLE_R):
-                self.apples.append([x, y])
-                return
-
-        # Sixty-four tries and no room: the board is packed. Go without rather than
-        # spin -- a snake with nothing left to eat has already won.
+        # _occupied() is built ONCE. It used to be called from inside the filter,
+        # which rebuilt the whole occupied set for every one of the board's 576
+        # cells -- and the set is every cell of every snake, so the cost climbed
+        # with the snake: 0.3ms when it was three cells long, 4ms at eighty.
+        #
+        # That lands on the tick that eats the apple, inside the tick loop, and it
+        # pushed that one tick ~12ms late. The browser slides the snake between
+        # ticks and measures how long it has to slide for, so a late tick made it
+        # stall and then jump -- once every few seconds, which is how often you eat.
+        # Smooth animation is a bargain the server has to keep too.
+        taken = self._occupied()
+        free = [
+            (x, y) for x in range(WIDTH) for y in range(HEIGHT) if (x, y) not in taken
+        ]
+        if free:
+            # NOT random.choice: the browser has to pick the same cell, and it can
+            # only do that if the arithmetic is arithmetic it can also do. `free`
+            # is built in a fixed order -- x then y -- so an index is enough.
+            self.apples.append(free[self.rng.below(len(free))])
 
     # -- input is intent, not action --------------------------------------
 
@@ -253,145 +228,106 @@ class Snake(RealTimeGame):
         if not snake.alive:
             raise InvalidMove("snake.dead")
 
-        # No turning back on yourself, judged against the direction actually being
-        # travelled. There is no "move in flight" to judge it against any more: that
-        # whole apparatus -- Step, `next`, deciding a tick early -- existed to paper
-        # over the grid, and the grid is gone. A turn takes effect when you ask.
+        # No reversing into your own neck. Judged against the direction the snake
+        # will be FACING once the move already in flight has been made -- see
+        # SnakeBody.facing -- because that is the move this intent follows. It used
+        # to be judged against the direction last travelled, which was the same
+        # thing back when a tick read the intent standing at the moment it fired.
         dx, dy = DIRECTIONS[heading]
-        cx, cy = DIRECTIONS[snake.heading]
-        if dx == -cx and dy == -cy:
+        cx, cy = DIRECTIONS[snake.facing]
+        if len(snake.cells) > 1 and (dx, dy) == (-cx, -cy):
             raise InvalidMove("snake.no_reverse")
 
-        snake.pending = heading
+        snake.pending = heading  # _decide() is what actually turns the snake
 
     # -- the clock --------------------------------------------------------
 
     def tick(self, dt: float) -> None:
         self.elapsed += dt
 
-        living = [s for s in self.snakes if s.alive]
-        if not living:
+        if not any(snake.alive for snake in self.snakes):
             return
 
-        step = SPEED * dt
-        for snake in living:
-            self._advance(snake, step)
-
-        # Everybody moves before anybody dies, so two heads meeting kill each other
-        # rather than whoever happens to be first in the list.
-        for snake in [s for s in living if self._crashed(s)]:
-            snake.alive = False
-
-        for snake in living:
-            if snake.alive:
-                self._eat(snake)
-
+        self._execute()  # ...the move decided last tick, which is on every screen
         self._settle()
+        self._decide()  # ...and the next one, from the intent standing right now
 
-    def _advance(self, snake: SnakeBody, step: float) -> None:
-        if snake.pending != snake.heading and snake.straight >= MIN_TURN:
-            # A corner: the head stops being a moving point and becomes a fixed one,
-            # and a fresh head sets off from it.
-            snake.path.insert(0, [snake.head[0], snake.head[1]])
-            snake.heading = snake.pending
-            snake.straight = 0.0
-
-        snake.straight += step
-
-        dx, dy = DIRECTIONS[snake.heading]
-        snake.path[0][0] += dx * step
-        snake.path[0][1] += dy * step
-
-        if snake.growing > 0.0:
-            grown = step if step < snake.growing else snake.growing
-            snake.length += grown
-            snake.growing -= grown
-
-        self._trim(snake)
-
-    def _trim(self, snake: SnakeBody) -> None:
-        """Cut the tail back so the path is exactly `length` units long."""
-        left = snake.length
-        kept: list[list[float]] = []
-
-        for i in range(len(snake.path) - 1):
-            a, b = snake.path[i], snake.path[i + 1]
-            # Axis-aligned, so a segment's length is |dx| + |dy| exactly. No sqrt.
-            span = abs(b[0] - a[0]) + abs(b[1] - a[1])
-            kept.append(a)
-
-            if span >= left:
-                if span == 0.0:
-                    kept.append([a[0], a[1]])
-                else:
-                    part = left / span
-                    kept.append(
-                        [a[0] + (b[0] - a[0]) * part, a[1] + (b[1] - a[1]) * part]
-                    )
-                snake.path = kept
-                return
-
-            left -= span
-
-        kept.append(snake.path[-1])
-        snake.path = kept
-
-    def _crashed(self, snake: SnakeBody) -> bool:
-        x, y = snake.head
-
-        if x < HEAD_R or x > BOARD - HEAD_R or y < HEAD_R or y > BOARD - HEAD_R:
-            return True
-
-        for other in self.snakes:
-            if not other.alive:
-                continue
-            # Your own neck cannot kill you. Everybody else's body can, right up to
-            # their head.
-            skip = NECK if other is snake else 0.0
-            if self._touches(x, y, other, skip):
-                return True
-
-        return False
-
-    def _touches(self, x: float, y: float, other: SnakeBody, skip: float) -> bool:
-        walked = 0.0
-
-        for i in range(len(other.path) - 1):
-            a, b = other.path[i], other.path[i + 1]
-            span = abs(b[0] - a[0]) + abs(b[1] - a[1])
-
-            if walked + span <= skip:
-                walked += span
+    def _execute(self) -> None:
+        """Carry out the move every client has already been told about."""
+        for snake in self.snakes:
+            if not snake.alive or snake.step is None:
                 continue
 
-            ax, ay = a[0], a[1]
-            if walked < skip and span > 0.0:
-                # The neck ends part-way along this segment. Start from there.
-                part = (skip - walked) / span
-                ax = a[0] + (b[0] - a[0]) * part
-                ay = a[1] + (b[1] - a[1]) * part
+            if snake.step.fatal:
+                snake.alive = False
+                continue
 
-            if _distance2_to_segment(x, y, ax, ay, b[0], b[1]) < _reach2(
-                HEAD_R, BODY_R
-            ):
-                return True
+            head = snake.step.to
+            snake.heading = snake.step.heading
+            snake.cells.insert(0, head)
 
-            walked += span
-
-        return False
-
-    def _eat(self, snake: SnakeBody) -> None:
-        x, y = snake.head
-
-        for apple in list(self.apples):
-            dx, dy = x - apple[0], y - apple[1]
-            # Overlap is enough. You do not have to land ON it -- there is nowhere to
-            # land -- you have to run into it, which is what eating looks like
-            # everywhere except on a grid.
-            if dx * dx + dy * dy < _reach2(HEAD_R, APPLE_R):
-                self.apples.remove(apple)
+            if head in self.apples:
+                self.apples.remove(head)
                 snake.growing += GROWTH
                 self._grow_an_apple()
+
+            if snake.growing:
+                snake.growing -= 1  # keep the tail: the snake gets longer
+            else:
+                snake.cells.pop()
+
+    def _decide(self) -> None:
+        """Fix what happens on the NEXT tick, and hand it to the renderer.
+
+        Everything the old tick() worked out at the moment of moving is worked out
+        here instead, one tick earlier. It is the same arithmetic on the same
+        board -- the only thing that has moved is WHEN, and the point of moving it
+        is that the answer can now be put on the wire before it is needed.
+        """
+        living = [snake for snake in self.snakes if snake.alive]
+
+        # Everyone moves at once, so work out every new head BEFORE resolving any
+        # collision. Doing it snake-by-snake would let whoever is first in the
+        # list win a head-on that should kill them both.
+        heads: dict[SnakeBody, tuple[int, int]] = {}
+        for snake in living:
+            dx, dy = DIRECTIONS[snake.pending]
+            x, y = snake.head
+            heads[snake] = (x + dx, y + dy)
+
+        # A tail cell moves out of the way next tick, so following one is legal --
+        # unless its owner is growing, in which case the tail stays put.
+        bodies: set[tuple[int, int]] = set()
+        for snake in living:
+            keep = snake.cells if snake.growing else snake.cells[:-1]
+            bodies.update(keep)
+
+        doomed: set[SnakeBody] = set()
+        for snake, head in heads.items():
+            x, y = head
+            if not (0 <= x < WIDTH and 0 <= y < HEIGHT):
+                doomed.add(snake)  # into the wall
+            elif head in bodies:
+                doomed.add(snake)  # into somebody, possibly themselves
+            else:
+                # Two heads into the same cell: both of them.
+                rivals = [s for s, h in heads.items() if s is not snake and h == head]
+                if rivals:
+                    doomed.add(snake)
+                    doomed.update(rivals)
+
+        for snake in living:
+            head = heads[snake]
+            snake.step = Step(
+                heading=snake.pending,
+                to=None if snake in doomed else head,
+                # The tail holds if the snake is still growing from the last apple,
+                # or is about to eat the next one. Without this the browser slides
+                # the tail forward on a snake that is getting longer, and the state
+                # puts it back a sixth of a second later -- a tail that flickers
+                # once per apple, every apple.
+                grows=snake.growing > 0 or head in self.apples,
+            )
 
     def _settle(self) -> None:
         alive = [seat for seat, snake in enumerate(self.snakes) if snake.alive]
@@ -399,7 +335,7 @@ class Snake(RealTimeGame):
 
         if solo:
             if not alive:
-                self.finish(Result.draw())  # nobody to beat; the length is the score
+                self.finish(Result.draw())  # nobody to beat; the score is the length
             return
 
         if len(alive) == 1:
@@ -407,46 +343,42 @@ class Snake(RealTimeGame):
         elif not alive:
             self.finish(Result.draw())  # everybody crashed on the same tick
 
-    def run(self, moves: list[dict], ticks: int) -> None:
-        """Play the run the browser says it played, and see what really happened."""
-        at_tick: dict[int, list[dict]] = {}
-        for move in moves:
-            at_tick.setdefault(int(move["tick"]), []).append(move)
-
-        for tick in range(ticks):
-            for move in at_tick.get(tick, []):
-                with contextlib.suppress(InvalidMove):
-                    self.apply_move(self.players[0], {"dir": move["dir"]})
-            if self.over:
-                return
-            self.tick(1 / self.tick_hz)
-
     # -- what everyone sees -----------------------------------------------
 
     def public_state(self) -> dict:
         return {
-            "board": BOARD,
-            "headR": HEAD_R,
-            "bodyR": BODY_R,
-            "appleR": APPLE_R,
-            "speed": SPEED,
-            # The browser plays a solo game itself, and cannot grow the same apples
-            # without this. It is not a secret: it IS the game.
+            "width": WIDTH,
+            "height": HEIGHT,
+            # The browser runs a SOLO game itself -- see client_clock -- and this is
+            # what lets it grow the same apples we would have. It is not a secret:
+            # it is the game, and the game is on the wire already.
             "seed": self.seed,
-            "apples": [[a[0], a[1]] for a in self.apples],
-            # RAW, not rounded. Python rounds a half to even and JavaScript rounds it
-            # up, so a rounded float on the wire is a divergence waiting for the right
-            # value to come along. Formatting is the renderer's job.
-            "seconds": self.elapsed,
+            "apples": [list(apple) for apple in self.apples],
+            # `seconds` is the SCORE, not a clock to animate against: it is rounded
+            # to a tenth, and at these rates a tenth cannot tell one tick from two. The
+            # renderer uses the platform's `tick` and `tickHz` for that.
+            "seconds": round(self.elapsed, 1),
             "snakes": [
                 {
                     "player": self.players[seat],
-                    # The path it occupies, head first. Not cells: there are none.
-                    "path": [[p[0], p[1]] for p in snake.path],
-                    "heading": snake.heading,
+                    "cells": [list(cell) for cell in snake.cells],
                     "alive": snake.alive,
-                    # The score, and a real number now: you are as long as you are.
-                    "length": snake.length,
+                    "length": len(snake.cells),
+                    # What it does NEXT tick, so the browser can draw the move
+                    # while it happens instead of a cell after it did. `next` is
+                    # the cell the head takes -- null if that move kills it, and
+                    # then the snake simply stops, which is what the engine does
+                    # too: it dies where it stands rather than in the wall.
+                    #
+                    # This is not hidden information. Snake has none: every cell of
+                    # every snake is already on the wire, and a move that is fixed
+                    # is a fact about the board, not a peek at somebody's keyboard.
+                    "next": (
+                        list(snake.step.to)
+                        if snake.alive and snake.step and snake.step.to
+                        else None
+                    ),
+                    "grows": bool(snake.alive and snake.step and snake.step.grows),
                 }
                 for seat, snake in enumerate(self.snakes)
             ],
@@ -454,7 +386,22 @@ class Snake(RealTimeGame):
 
 
 def replay(seed: int, players: list[str], moves: list[dict], ticks: int) -> Snake:
-    """Run a game again from its seed and its moves, and see what really happened."""
+    """Run a game again from its seed and its moves, and see what really happened.
+
+    This is what makes a browser-simulated game safe to trust. A solo run is played
+    entirely on the client -- it has to be, because a phone's radio cannot deliver a
+    tick on time and a game you watch over one is a game you cannot steer -- so the
+    score arrives as a claim rather than as something we watched happen.
+
+    A claim we can check. The run is a pure function of the seed we handed out, the
+    moves the player made, and the ticks they took, so we run it again here and look
+    at the result ourselves. A client that lies about its score gets the score it
+    actually earned; a client that lies about its MOVES has merely played the game
+    well, which is what it was invited to do.
+
+    `moves` is [{"tick": n, "dir": "left"}, ...] in tick order -- the input log, and
+    the only thing about the run that is not already ours.
+    """
     game = Snake(seed=seed)
     for player in players:
         game.add_player(player)
