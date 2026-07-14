@@ -4,6 +4,7 @@ from .base import Game, InvalidMove, RealTimeGame, Result
 from .battleship import Battleship
 from .connectfour import ConnectFour
 from .dotsandboxes import DotsAndBoxes
+from .gris import Gris
 from .hangman import Hangman
 from .nim import Nim
 from .othello import Othello
@@ -21,6 +22,7 @@ GAMES: dict[str, type[Game]] = {
     Nim.key: Nim,
     Hangman.key: Hangman,
     Battleship.key: Battleship,
+    Gris.key: Gris,
     Snake.key: Snake,
     Snakes.key: Snakes,
     Pong.key: Pong,

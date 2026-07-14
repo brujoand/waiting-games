@@ -1,4 +1,4 @@
-"""Hangman and Battleship: the two games with secrets.
+"""Hangman, Battleship and Gris: the games with secrets.
 
 The leak tests come first because they are the only tests here that protect
 something a player cannot simply undo. A bug in the scoring is annoying; a fleet
@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import pathlib
+import random
 import re
 import unicodedata
 
@@ -18,6 +19,7 @@ from conftest import rejected
 
 from waiting_games.games import InvalidMove
 from waiting_games.games.battleship import FIRING, HIT, MISS, SIZE, Battleship
+from waiting_games.games.gris import HAND, LETTERS, RANKS, Gris, deck_for
 from waiting_games.games.hangman import GALLOWS, MAX_WRONG, Hangman
 
 A, B, C = "u-alice", "u-bob", "u-carol"
@@ -398,3 +400,344 @@ def test_sinking_the_whole_fleet_wins():
     assert game.over
     assert game.winner == A
     assert set(game.view(0)["sunkBy"][A]) == {name for name, _ in _fleet_sizes()}
+
+
+# ==========================================================================
+# Gris: your hand is the secret, and the nose race is the game
+# ==========================================================================
+
+
+def table(players=(A, B, C)):
+    game = Gris()
+    for player in players:
+        game.add_player(player)
+    # Seeded so that a failure in a test which does NOT stack the deal is
+    # reproducible rather than a once-a-week mystery. S311 is about cryptography;
+    # this is a card game, and games/* is already excused for the same reason.
+    game.rng = random.Random(7)  # noqa: S311
+    game.start()
+    return game
+
+
+def stack(game, *hands):
+    """Deal a hand we chose instead of one the shuffle chose.
+
+    The engine reads self.hands and nothing else, so this is the whole deal. It is
+    the only way to write a test about four of a kind that does not amount to
+    shuffling until we get one.
+    """
+    game.hands = [list(hand) for hand in hands]
+
+
+# Every card that could ever be dealt, at any table size.
+DECK = frozenset(deck_for(Gris.max_players))
+
+
+def cards_in(payload) -> set[str]:
+    """Every card anywhere in the payload, however deeply buried.
+
+    Deliberately NOT `leaks`, which is a substring search: a card is two characters
+    long, and two characters collide with ordinary English. "AS" is inside "passed"
+    -- a key that is in every payload this game sends -- so substring-searching for
+    a secret this short reports a leak in every game ever played, including the ones
+    that are airtight. Match whole strings instead, and walk the structure to find
+    them, exactly as `coordinates` does for Battleship's cells.
+    """
+    if isinstance(payload, str):
+        return {payload} & DECK
+    if isinstance(payload, dict):
+        found: set[str] = set()
+        for key, value in payload.items():
+            found |= cards_in(key) | cards_in(value)
+        return found
+    if isinstance(payload, list):
+        return {card for item in payload for card in cards_in(item)}
+    return set()
+
+
+# Three players, so the deck is aces, kings and queens. Alice has four of a kind
+# and nobody else is close.
+ALICE_HAS_FOUR = (
+    ["AS", "AH", "AD", "AC"],
+    ["KS", "KH", "KD", "QC"],
+    ["QS", "QH", "QD", "KC"],
+)
+
+# The same twelve cards, dealt so that nobody has anything.
+NOBODY_HAS_FOUR = (
+    ["AS", "AH", "AD", "KC"],
+    ["KS", "KH", "KD", "QC"],
+    ["QS", "QH", "QD", "AC"],
+)
+
+
+# -- the deck ----------------------------------------------------------------
+
+
+def test_every_rank_has_a_face_in_both_languages():
+    """The renderer builds its key from the card: t(`gris.rank.${card[0]}`). That is
+    a key no static check can see, so a rank with no string in the dictionary does
+    not fail a build -- it draws the card face as the literal text "gris.rank.6".
+
+    RANKS is Python and the faces are JavaScript, and the seat count is derived from
+    RANKS, so widening the table is exactly the change that would do it. Nothing but
+    this holds the two together.
+    """
+    faces = (
+        pathlib.Path(__file__).parent.parent / "waiting_games" / "static" / "i18n.js"
+    ).read_text()
+
+    for rank in RANKS:
+        key = f'"gris.rank.{rank.lower()}":'
+        # Once per dictionary: English and Norwegian.
+        assert faces.count(key) == 2, f"no card face for the {rank}"
+
+    assert Gris.max_players == len(RANKS)  # a seat with no rank has no fourth card
+
+
+@pytest.mark.parametrize("players", range(Gris.min_players, Gris.max_players + 1))
+def test_the_deck_holds_exactly_one_rank_per_player(players):
+    """Which is what makes the game finishable at all: four of a kind is only ever
+    reachable because every card of every rank in play is already on the table --
+    they are merely in the wrong hands. A deck with a spare rank would let a set be
+    permanently impossible, and everyone would pass cards forever."""
+    cards = deck_for(players)
+
+    assert len(cards) == players * HAND
+    assert len(set(cards)) == len(cards)  # no card is dealt twice
+    assert len({card[0] for card in cards}) == players  # one rank per player
+    assert all(
+        cards.count(rank + suit) == 1 for rank in RANKS[:players] for suit in "SHDC"
+    )
+
+
+# -- the secrets -------------------------------------------------------------
+
+
+def test_a_hand_is_hidden_from_the_other_players():
+    game = table()
+    stack(game, *ALICE_HAS_FOUR)
+
+    seen = game.view(1)  # what bob is sent
+
+    assert seen["hand"] == ["KS", "KH", "KD", "QC"]  # his own, in full
+    assert cards_in(seen) == set(game.hands[1])  # and not one card of anybody else's
+
+
+def test_a_spectator_sees_no_hand_at_all():
+    """The strictest view in the game: anyone logged in may open the socket and
+    watch, and a watcher who can see the cards can see who is about to touch."""
+    game = table()
+    stack(game, *ALICE_HAS_FOUR)
+
+    watching = game.view(None)
+
+    assert "hand" not in watching
+    assert "four" not in watching  # nor even a hint that alice is one card away
+    assert cards_in(watching) == set()
+
+
+def test_which_card_you_are_passing_stays_secret():
+    """That you have chosen is public -- a card face-down on the table is a thing
+    everyone can see. WHICH card it is, is not."""
+    game = table()
+    stack(game, *NOBODY_HAS_FOUR)
+
+    game.apply_move(A, {"card": "KC"})
+
+    assert game.view(None)["passed"] == [A]  # everyone knows she is ready
+    assert game.view(0)["chosen"] == "KC"  # alice, of course, knows what she picked
+    # Bob is told a card is coming, and nothing whatever about which one.
+    assert cards_in(game.view(1)) == set(game.hands[1])
+    assert cards_in(game.view(None)) == set()
+
+
+# -- passing -----------------------------------------------------------------
+
+
+def test_everyone_passes_at_once_and_nobody_waits_for_a_turn():
+    game = table()
+
+    assert all(game._may_move(seat) for seat in range(3))
+
+
+def test_the_cards_only_move_when_the_last_player_has_chosen():
+    game = table()
+    stack(game, *NOBODY_HAS_FOUR)
+
+    game.apply_move(C, {"card": "AC"})
+    game.apply_move(A, {"card": "KC"})  # in any order; there is no turn
+
+    assert game.hands[0] == ["AS", "AH", "AD", "KC"]  # nothing has moved yet
+
+    game.apply_move(B, {"card": "QC"})  # ...and now the table turns
+
+    # Each player passed the one card that was blocking someone ELSE's set, so this
+    # one pass completes all three at once. It also pins the direction: alice is
+    # holding carol's ace, not bob's queen, which is what "to the left" means here.
+    assert game.hands == [
+        ["AS", "AH", "AD", "AC"],
+        ["KS", "KH", "KD", "KC"],
+        ["QS", "QH", "QD", "QC"],
+    ]
+    assert game.view(0)["chosen"] is None  # a fresh choice to make
+    assert game.view(None)["passed"] == []
+
+
+def test_you_cannot_pass_twice_in_a_round():
+    game = table()
+    stack(game, *NOBODY_HAS_FOUR)
+    game.apply_move(A, {"card": "KC"})
+
+    with rejected("gris.already_passed"):
+        game.apply_move(A, {"card": "AS"})
+
+
+@pytest.mark.parametrize("card", ["QH", "ZZ", "", None, True, 7, ["AS"]])
+def test_a_card_you_are_not_holding_cannot_be_passed(card):
+    """QH is a real card in a real deck -- it is simply in carol's hand."""
+    game = table()
+    stack(game, *NOBODY_HAS_FOUR)
+
+    with rejected("gris.not_your_card"):
+        game.apply_move(A, {"card": card})
+
+
+def test_a_move_that_is_neither_a_pass_nor_a_touch_is_rejected():
+    game = table()
+
+    with rejected("gris.no_move"):
+        game.apply_move(A, {"touch": False})
+
+
+# -- the nose race -----------------------------------------------------------
+
+
+def test_touching_with_four_of_a_kind_opens_the_race():
+    game = table()
+    stack(game, *ALICE_HAS_FOUR)
+
+    game.apply_move(A, {"touch": True})
+
+    assert game.view(None)["touched"] == [A]
+    assert game.view(None)["caught"] == A  # she is the one who actually had them
+    assert game.letters == [0, 0, 0]  # nobody has lost anything yet
+    assert not game.over
+
+
+def test_the_slowest_player_takes_the_letter_without_ever_pressing_anything():
+    """The round ends when everybody BUT one has touched. There is nothing left for
+    the last player to do, and so there is nothing to wait for -- which is the whole
+    reason this game needs no clock. A player who has wandered off loses the round
+    instead of hanging it."""
+    game = table()
+    stack(game, *ALICE_HAS_FOUR)
+
+    game.apply_move(A, {"touch": True})
+    game.apply_move(C, {"touch": True})  # carol notices; bob does not
+
+    assert game.letters == [0, 1, 0]  # bob, who never moved, pays
+    assert game.view(None)["last"] == {"loser": B, "reason": "slow", "caught": A}
+
+
+def test_copying_a_nose_needs_no_cards_at_all():
+    """Carol has nothing. Once a nose is up she may still save herself, and that is
+    the game: you are not racing to collect cards, you are racing to NOTICE."""
+    game = table()
+    stack(game, *ALICE_HAS_FOUR)
+    assert not game._has_four(2)
+
+    game.apply_move(A, {"touch": True})
+    game.apply_move(C, {"touch": True})  # legal, and it costs her nothing
+
+    assert game.letters[2] == 0
+
+
+def test_touching_first_with_nothing_is_a_false_start():
+    """The rule that stops a player simply hammering the button every round."""
+    game = table()
+    stack(game, *NOBODY_HAS_FOUR)
+
+    game.apply_move(B, {"touch": True})
+
+    assert game.letters == [0, 1, 0]
+    assert game.view(None)["last"] == {
+        "loser": B,
+        "reason": "false_start",
+        "caught": None,
+    }
+
+
+def test_passing_stops_once_a_nose_is_up():
+    game = table()
+    stack(game, *ALICE_HAS_FOUR)
+    game.apply_move(A, {"touch": True})
+
+    with rejected("gris.hands_are_up"):
+        game.apply_move(B, {"card": "KS"})
+
+
+def test_you_cannot_touch_your_nose_twice():
+    game = table()
+    stack(game, *ALICE_HAS_FOUR)
+    game.apply_move(A, {"touch": True})
+
+    with rejected("gris.already_touched"):
+        game.apply_move(A, {"touch": True})
+
+
+def test_a_lost_round_is_followed_by_a_fresh_deal():
+    game = table()
+    stack(game, *ALICE_HAS_FOUR)
+    game.apply_move(A, {"card": "AS"})  # a card in flight, and a nose about to go up
+
+    game.apply_move(B, {"touch": True})  # bob false starts
+
+    assert game.round == 2
+    assert game.view(None)["touched"] == []
+    assert game.view(None)["passed"] == []  # alice's committed card is forgotten
+    assert sorted(card for hand in game.hands for card in hand) == sorted(deck_for(3))
+    assert all(len(hand) == HAND for hand in game.hands)
+
+
+# -- spelling the word -------------------------------------------------------
+
+
+def test_spelling_gris_ends_the_game_and_names_the_pig():
+    game = table()
+    stack(game, *NOBODY_HAS_FOUR)
+    game.letters = [LETTERS - 1, 0, 1]  # alice is one bad round from the word
+
+    game.apply_move(A, {"touch": True})  # ...and she false starts
+
+    assert game.over
+    assert game.view(None)["pig"] == A
+    assert game.view(None)["counts"] == {A: LETTERS, B: 0, C: 1}
+    # Fewest letters wins, so the pig is last by construction and bob is clear.
+    assert game.winner == B
+
+
+def test_survivors_who_got_through_equally_unscathed_draw():
+    """There is only ever one pig. If the others come out level, saying one of them
+    beat the other would be an invention."""
+    game = table()
+    stack(game, *NOBODY_HAS_FOUR)
+    game.letters = [LETTERS - 1, 0, 0]
+
+    game.apply_move(A, {"touch": True})
+
+    assert game.over
+    assert game.view(None)["pig"] == A
+    assert game.winner is None  # a draw between bob and carol
+
+
+def test_the_final_view_shows_the_cards_the_game_ended_on():
+    """No fresh deal over the top of a finished game."""
+    game = table()
+    stack(game, *NOBODY_HAS_FOUR)
+    game.letters = [LETTERS - 1, 0, 0]
+
+    game.apply_move(A, {"touch": True})
+
+    assert game.round == 1  # never dealt again
+    assert game.hands[0] == ["AS", "AH", "AD", "KC"]

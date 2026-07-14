@@ -928,3 +928,180 @@ header {
   font-size: 0.75rem;
   overflow-wrap: anywhere;
 }
+
+/* -- Gris ----------------------------------------------------------------- */
+
+.board-gris {
+  display: grid;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.gris-note {
+  margin: 0;
+  padding: 0.5rem 0.7rem;
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+/* The table is the board: the game is watching the other players, not the cards. */
+.gris-table {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.gris-player {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.45rem 0.6rem;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+
+.gris-player[data-me="true"] {
+  border-color: var(--accent);
+}
+
+.gris-player[data-touched="true"] {
+  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.gris-player[data-pig="true"] {
+  border-color: #d9534f;
+}
+
+.gris-name {
+  flex: 1;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* G R I S, with the letters they have not earned yet still visible: how much room
+   is left is the whole reason to show the word rather than a number. */
+.gris-word {
+  display: flex;
+  gap: 3px;
+  font: 700 0.85rem/1 ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+.gris-word i {
+  display: grid;
+  place-items: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 3px;
+  background: var(--bg);
+  color: var(--line);
+  font-style: normal;
+}
+
+.gris-word i[data-on="true"] {
+  background: #d9534f;
+  color: #fff;
+}
+
+.gris-chip {
+  width: 4.5rem;
+  text-align: right;
+  color: var(--muted);
+  font-size: 0.8rem;
+}
+
+.gris-player[data-passed="true"] .gris-chip {
+  color: var(--accent);
+}
+
+.gris-player[data-touched="true"] .gris-chip {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* -- your hand -- */
+
+.gris-hand {
+  display: flex;
+  justify-content: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.gris-card {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  width: 3.6rem;
+  height: 5rem;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+  color: #16181d;
+  font: 700 1.3rem/1 ui-monospace, "SF Mono", Menlo, monospace;
+  cursor: pointer;
+  transition: transform 0.08s;
+}
+
+.gris-card i {
+  font-size: 1.5rem;
+  font-style: normal;
+}
+
+.gris-card[data-suit="H"],
+.gris-card[data-suit="D"] {
+  color: #d9534f;
+}
+
+.gris-card:enabled:hover {
+  transform: translateY(-6px);
+  border-color: var(--accent);
+}
+
+.gris-card[data-chosen="true"] {
+  transform: translateY(-10px);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.gris-card:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+/* -- the nose -- */
+
+.gris-nose {
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+}
+
+.gris-touch {
+  min-width: 14rem;
+  padding: 0.7rem 1.2rem;
+  font-size: 1.05rem;
+}
+
+/* Not armed does not mean not clickable: touching first with nothing is a legal
+   move that costs you a letter, and the button has to look like the risk it is
+   rather than quietly punish you for taking it. */
+.gris-touch[data-armed="false"]:enabled {
+  background: var(--panel);
+  border: 1px dashed var(--muted);
+  color: var(--muted);
+}
+
+.gris-hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
