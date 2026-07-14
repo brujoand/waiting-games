@@ -38,9 +38,20 @@ const ARROWS = {
   d: { dir: "right" },
 };
 
-// Long enough to read as travel, short enough that a player drumming the arrow
-// keys is never waiting on it.
-const SLIDE_MS = 110;
+// Slow enough to WATCH.
+//
+// This was 110ms, which is roughly what the original game uses, and it was too
+// quick to follow: the tiles were plainly moving and you still could not say which
+// ones had. A move is something to be READ, and there is time to read it -- the
+// board is only ever waiting on the player. So the slide takes its time, and the
+// swell that follows happens AFTER it rather than under it, because two things at
+// once are one thing you cannot see.
+//
+// The whole move is a little over a third of a second. That is the ceiling: past
+// about half a second the animation stops explaining the move and starts being
+// something you sit through, and a player who already knows what they pressed
+// resents every frame of it.
+const SLIDE_MS = 190;
 
 const still = window.matchMedia("(prefers-reduced-motion: reduce)");
 
@@ -125,10 +136,7 @@ export function create({ root, send }) {
       // player has to tell them apart at a glance: the new one fades up out of
       // nothing, the merged one lands and swells.
       if (index === flair.spawned) once(tile, "t48-arrive");
-      else if (flair.merged.has(index)) {
-        once(tile, "t48-merge");
-        gain(tile, value);
-      }
+      else if (flair.merged.has(index)) once(tile, "t48-merge");
     });
 
     drawn = game.moves;
@@ -142,20 +150,6 @@ export function create({ root, send }) {
     tile.addEventListener("animationend", () => tile.classList.remove(className), {
       once: true,
     });
-  }
-
-  // The points a merge just paid, floating up off the tile that earned them. The
-  // score lives in the status line, where a number quietly ticking up is easy to
-  // miss; this says WHICH tile earned it, at the moment it does.
-  function gain(tile, value) {
-    if (still.matches) return;
-    const float = document.createElement("span");
-    float.className = "t48-gain";
-    float.textContent = `+${value}`;
-    // It lives inside the tile, so without this a screen reader reads it as "4+4".
-    float.setAttribute("aria-hidden", "true");
-    tile.append(float);
-    float.addEventListener("animationend", () => float.remove(), { once: true });
   }
 
   // Whatever was in the air has arrived. Called before every state, so a player
