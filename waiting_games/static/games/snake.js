@@ -6,7 +6,7 @@
 
 import { t } from "../i18n.js";
 import { COLOURS, canvas, hint, keys, onChange, swipe } from "./_canvas.js";
-import { ASSUMED_TICK_MS, at, spanFor } from "./_interpolate.js";
+import { at, timeline } from "./_interpolate.js";
 
 // Swipe on a phone; the arrow keys (or WASD) on anything with them.
 const SWIPES = {
@@ -34,24 +34,20 @@ export function create({ root, me, send }) {
   // second. That is the choppiness, and it is not a dropped-frame problem -- it
   // is what the game looks like when you draw it honestly.
   //
-  // So draw it dishonestly, by exactly one tick. Keep the previous frame, and
-  // slide each segment from where it WAS to where it IS across the span between
-  // them. The rules do not change, the wire does not change; only the pixels
-  // between two states the server already agreed on.
-  let previous = null;
-  let latest = null;
-  let arrived = 0;
-  let span = ASSUMED_TICK_MS;
+  // So draw it dishonestly, by a fraction of a second. The timeline buffers the
+  // states and hands back the two either side of the moment we are drawing; we
+  // slide each segment between them. The rules do not change, the wire does not
+  // change; only the pixels between two states the server already agreed on.
+  let clock = null;
 
   const board = canvas(root, (context, side) => {
-    if (!latest) return;
+    const frame = clock?.read(performance.now());
+    if (!frame) return;
 
-    // Clamped at 1: if the next state is late, the snake waits ON a cell rather
-    // than sliding past it into a cell the server has not agreed to yet. A brief
-    // hold is the honest failure -- and because spanFor() is exactly right, the
-    // hold is all you get. There is nothing left over to jump.
-    const alpha = span > 0 ? Math.min((performance.now() - arrived) / span, 1) : 1;
-    paint(context, side, latest, previous, alpha, me);
+    // `after` is the state being slid TOWARDS, so it is the one whose body
+    // defines how many segments there are. `before` is where they came from, and
+    // is null when there is nothing to slide from -- see at().
+    paint(context, side, frame.after, frame.before, frame.alpha, me);
   });
   hint(root, t("snake.hint"));
 
@@ -64,23 +60,16 @@ export function create({ root, me, send }) {
 
   return {
     update(game) {
-      const now = performance.now();
+      // Before the clock starts there is nothing to animate -- and nothing to
+      // animate BETWEEN, either: a game sitting in the lobby has no ticks.
+      if (game.tick === undefined) return;
+      if (clock === null) clock = timeline(game.tickHz);
 
-      // Only a TICK advances the world. A state push that is not a tick -- someone
-      // connecting, someone dropping -- must not restart the slide, or the snake
-      // would visibly stutter every time a player opened the page.
-      const ticked = latest !== null && game.seconds !== latest.seconds;
-
-      if (ticked) {
-        span = spanFor(now - arrived, game.tickHz);
-        previous = latest;
-        arrived = now;
-      } else if (latest === null) {
-        span = spanFor(0, game.tickHz); // nothing measured yet: one tick
-        arrived = now;
-      }
-
-      latest = game;
+      // The tick index is what makes a state a MOMENT rather than just the
+      // newest thing we have. A push that carries no new tick -- somebody
+      // connecting, somebody leaving -- is dropped on the floor by accept(),
+      // which is why opening the page no longer stutters everyone else's snake.
+      clock.accept(game, game.tick, performance.now());
     },
     destroy() {
       board.destroy();
