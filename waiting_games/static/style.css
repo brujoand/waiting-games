@@ -918,3 +918,13 @@ header {
 .readout-copy:hover {
   color: var(--fg, inherit);
 }
+
+/* The renderer threw. It used to just stop -- one exception and the paint loop was
+   never rescheduled, so the board froze for ever and said nothing, on a phone with
+   no console to ask. Now it keeps painting and tells you. */
+.broke {
+  color: #d9534f;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
+}
