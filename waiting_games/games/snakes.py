@@ -50,7 +50,7 @@ from __future__ import annotations
 
 import contextlib
 import secrets
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from ._rng import Rng
 from .base import InvalidMove, RealTimeGame, Result
@@ -94,15 +94,6 @@ DIRECTIONS = {
 
 def _reach2(a: float, b: float) -> float:
     return (a + b) * (a + b)
-
-
-def _wrap(v: float) -> float:
-    """Onto the board, the short way. Arithmetic only -- see the module docstring."""
-    while v < 0.0:
-        v += BOARD
-    while v >= BOARD:
-        v -= BOARD
-    return v
 
 
 def _near2(px: float, py: float, ax: float, ay: float, bx: float, by: float) -> float:
@@ -186,8 +177,7 @@ class Snakes(RealTimeGame):
     def __init__(self, seed: int | None = None) -> None:
         super().__init__()
         self.snakes: list[SnakeBody] = []
-        self.apples: list[list[float]] = field(default_factory=list)
-        self.apples = []
+        self.apples: list[list[float]] = []
         self.elapsed = 0.0
 
         self.seed = secrets.randbelow(2**32) if seed is None else seed & 0xFFFFFFFF
@@ -309,7 +299,9 @@ class Snakes(RealTimeGame):
                 entry = [head[0], BOARD - edge]
 
             over = abs(x - head[0]) + abs(y - head[1])  # how far past the seam we got
-            snake.strokes.insert(0, [[entry[0] + dx * over, entry[1] + dy * over], entry])
+            snake.strokes.insert(
+                0, [[entry[0] + dx * over, entry[1] + dy * over], entry]
+            )
         else:
             head[0], head[1] = x, y
 
