@@ -327,11 +327,7 @@ class Solitaire(Game):
         # go. Counting that as a move is the conservative direction -- it can only ever
         # make us say "there is still something to do", never end a game that had a
         # move left in it.
-        for pile in self.foundations:
-            if pile and self._anywhere(pile[-1]):
-                return False
-
-        return True
+        return not any(pile and self._anywhere(pile[-1]) for pile in self.foundations)
 
     def _anywhere(self, card: str) -> bool:
         return any(self._fits_column(card, column) for column in range(COLUMNS))
