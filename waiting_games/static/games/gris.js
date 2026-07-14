@@ -9,9 +9,8 @@
 // up, how close each of them is to the word -- is the thing on screen.
 
 import { t } from "../i18n.js";
+import { card } from "./_cards.js";
 import { who } from "./_score.js";
-
-const PIPS = { S: "♠", H: "♥", D: "♦", C: "♣" };
 
 export function create({ root, me, send }) {
   root.className = "board-gris";
@@ -96,21 +95,12 @@ function hand(game, send, racing) {
   const rack = document.createElement("div");
   rack.className = "gris-hand";
 
-  for (const card of game.hand) {
-    const button = document.createElement("button");
-    button.className = "gris-card";
-    button.dataset.suit = card[1];
-    // Once a nose is up the deal is over: there is nothing left to do but race.
-    button.disabled = game.over || racing || game.chosen !== null;
-    if (card === game.chosen) button.dataset.chosen = "true";
+  // Once a nose is up the deal is over: there is nothing left to do but race.
+  const frozen = game.over || racing || game.chosen !== null;
 
-    const rank = document.createElement("b");
-    rank.textContent = t(`gris.rank.${card[0].toLowerCase()}`);
-    const pip = document.createElement("i");
-    pip.textContent = PIPS[card[1]];
-
-    button.append(rank, pip);
-    button.onclick = () => send({ card });
+  for (const code of game.hand) {
+    const button = card(code, { disabled: frozen, onclick: () => send({ card: code }) });
+    if (code === game.chosen) button.dataset.chosen = "true";
     rack.append(button);
   }
   return rack;

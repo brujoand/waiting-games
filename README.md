@@ -4,12 +4,12 @@ A small multiplayer browser game server, for playing something with the people
 in the room while you all wait for something else. Pick a name, start a game,
 share the page.
 
-Ten games: Tic-Tac-Toe, Connect Four, Othello, Dots and Boxes, Nim, Hangman,
-Battleship, Snake, Pong and 2048. Some are strictly turn-based, some hide
-information from the other player (Battleship's fleet, Hangman's word), and Snake
-and Pong run on a clock rather than turns. 2048 is for one player and Snake will
-take one, so the lobby asks first whether you are playing alone or with other
-people.
+Thirteen games: Tic-Tac-Toe, Connect Four, Othello, Dots and Boxes, Nim, Hangman,
+Battleship, Idiot, Gris, Snake, Snakes, Pong and 2048. Some are strictly
+turn-based, some hide information from the other players (Battleship's fleet,
+Hangman's word, the hand you are holding in Idiot), and Snake, Snakes and Pong run
+on a clock rather than turns. 2048 is for one player and Snake will take one, so
+the lobby asks first whether you are playing alone or with other people.
 
 ## Run it
 
