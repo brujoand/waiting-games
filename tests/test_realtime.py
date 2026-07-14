@@ -13,7 +13,13 @@ import asyncio
 import pytest
 from conftest import Watcher, rejected
 
-from waiting_games.games.pong import BALL_RADIUS, LIVES, PADDLE_HALF, Pong
+from waiting_games.games.pong import (
+    BALL_RADIUS,
+    LIVES,
+    PADDLE_HALF,
+    PADDLE_THICK,
+    Pong,
+)
 from waiting_games.games.snake import HEIGHT, WIDTH, Snake
 from waiting_games.lobby import Lobby, Player
 
@@ -270,6 +276,70 @@ def test_running_out_of_lives_puts_you_out_and_your_wall_goes_solid():
     assert game.winner == B
 
 
+def test_the_ball_turns_around_at_the_paddles_face_not_the_wall_behind_it():
+    """The paddle is a real slab, and the renderer draws it at exactly the
+    thickness the server bounces the ball off. It used to be drawn 2% thick over a
+    collision that happened at the wall, so at the moment of contact the ball was
+    already buried a third of the way into the bat -- and the ball is big enough
+    now that you would see it."""
+    game = seat(Pong)
+    game.paddles[0].position = 0.5
+
+    game.ball = [0.1, 0.5]  # dead centre on the left paddle, coming in slowly
+    game.velocity = [-0.5, 0.0]
+
+    run(game, 6)
+
+    assert game.velocity[0] > 0  # sent back
+    assert game.ball[0] >= PADDLE_THICK + BALL_RADIUS - 1e-9, (
+        f"the ball got inside the paddle: {game.ball}"
+    )
+
+
+def test_an_undefended_wall_has_no_paddle_to_stand_off_from():
+    """A bare wall is bare: the ball meets the wall itself, so it uses the whole
+    board. A wall that reserved a paddle's worth of space with no paddle on it
+    would be a slab of board that nothing bounces off."""
+    game = seat(Pong)  # top and bottom are solid
+
+    game.ball = [0.5, 0.03]
+    game.velocity = [0.0, -0.5]
+
+    run(game, 1)  # the tick it crosses on, so the bounce is still where it landed
+
+    assert game.velocity[1] > 0
+    assert game.ball[1] == pytest.approx(BALL_RADIUS)
+
+
+def test_a_paddle_says_when_it_is_being_held():
+    """The only feedback a phone gets. You steer by holding a HALF OF THE BOARD,
+    nowhere near the paddle, so without this nothing on screen says the press
+    landed."""
+    game = seat(Pong)
+
+    assert game.public_state()["paddles"][0]["held"] is False
+
+    game.apply_move(A, {"paddle": 1})
+    assert game.public_state()["paddles"][0]["held"] is True
+
+    game.apply_move(A, {"paddle": 0})
+    assert game.public_state()["paddles"][0]["held"] is False
+
+
+def test_a_paddle_jammed_against_the_end_of_its_wall_is_still_held():
+    """The moment a player most needs telling that the game can hear them: it is
+    being held, it cannot move, and a board that shows nothing at all looks like
+    one that has stopped listening. So this is the DRIFT, not the movement."""
+    game = seat(Pong)
+    left = game.paddles[0]
+
+    game.apply_move(A, {"paddle": -1})
+    run(game, 200)  # all the way to the end, and then some
+
+    assert left.position == pytest.approx(PADDLE_HALF)  # going nowhere
+    assert game.public_state()["paddles"][0]["held"] is True
+
+
 def test_a_paddle_only_moves_while_it_is_told_to():
     game = seat(Pong)
     left = game.paddles[0]
@@ -426,7 +496,11 @@ def test_one_slow_player_does_not_freeze_the_room():
         session.sockets.add((B, healthy))
         session.note_sockets_changed()
 
-        await asyncio.sleep(0.5)  # about four ticks at 8 Hz
+        # Measured in TICKS, not seconds. Snake's tick rate is its difficulty and
+        # is tuned when players say so -- it has already been slowed once -- and a
+        # test that hardcodes the wall-clock equivalent is one that fails the day
+        # somebody does, with a message about frames that says nothing about speed.
+        await asyncio.sleep(6 / session.engine.tick_hz)
 
         # The world kept turning...
         assert session.engine.elapsed > 0.2, "the simulation stalled"
