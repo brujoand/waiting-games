@@ -1,3 +1,15 @@
+# The object detector I Spy plays with -- 14MB of wasm and weights, pinned by
+# SHA-256 in the script and fetched rather than committed. A stage of its own, so
+# that curl and its CA bundle stay in the builder: the thing we ship should be
+# able to fetch nothing.
+FROM python:3.13-slim AS detector
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends curl ca-certificates \
+  && rm -rf /var/lib/apt/lists/*
+COPY scripts/fetch-detector.sh /scripts/fetch-detector.sh
+RUN /scripts/fetch-detector.sh
+
+
 FROM python:3.13-slim
 
 # A numeric UID, so a runtime enforcing "must not run as root" can check it
@@ -9,6 +21,10 @@ RUN pip install --no-cache-dir -r /requirements.txt
 
 WORKDIR /app
 COPY waiting_games /app/waiting_games
+
+# ...and the detector, on top of the static tree it is served from. Last, because
+# it is the layer that never changes: the source above it changes every commit.
+COPY --from=detector /waiting_games/static/vendor /app/waiting_games/static/vendor
 
 # The version is stamped in at build time, because it is not knowable from inside
 # the source tree: semantic-release decides it from the commits, AFTER this repo

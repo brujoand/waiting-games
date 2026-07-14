@@ -201,6 +201,13 @@ def test_no_english_prose_is_hardcoded_in_the_frontend():
     for path in sorted(STATIC.rglob("*.js")):
         if path.name == "i18n.js":  # the dictionaries, obviously
             continue
+        if "vendor" in path.parts:
+            # Somebody else's code. static/vendor is MediaPipe's object detector --
+            # fetched into the image by scripts/fetch-detector.sh, never committed,
+            # and full of English because Google wrote it. It is not ours to
+            # translate and not ours to lint, and the only reason it is reachable
+            # from here at all is that a browser has to be able to download it.
+            continue
         if path.name == "_debug.js":
             # The ?debug readout is an instrument, not a screen. No player can see
             # it -- it does not exist unless the URL asks for it by name -- and its

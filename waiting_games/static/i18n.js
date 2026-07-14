@@ -40,6 +40,7 @@ const en = {
   "ui.category.cards": "Cards",
   "ui.category.board": "Board",
   "ui.category.arcade": "Arcade",
+  "ui.category.world": "The world",
 
   // -- lobby rows
   "ui.status.waiting": "waiting",
@@ -109,6 +110,7 @@ const en = {
   "game.pong.title": "Pong",
   "game.twentyfortyeight.title": "2048",
   "game.solitaire.title": "Solitaire",
+  "game.ispy.title": "I Spy",
 
   // -- a playing card, shared by every game that deals one (games/_cards.js)
   //
@@ -311,6 +313,62 @@ const en = {
   "solitaire.you_won": "Every card home, in {moves} moves.",
   "solitaire.stuck": "No moves left. {score} of {cards} home.",
   "solitaire.run_over_watched": "The game ended with {score} of {cards} home.",
+
+  // I Spy. The things to find are whole phrases, one key each, and NOT a colour
+  // glued to a noun at runtime: "a red car" is "en rød bil", but "a red house"
+  // would be "et rødt hus" -- Norwegian agrees its adjectives with the gender of
+  // the noun, and a game is not the place to teach a template that. One phrase,
+  // one key, translated by somebody who speaks the language.
+  "ispy.no_move": "Find it, or give up on it.",
+  "ispy.not_the_target": "That is not what we are looking for.",
+  "ispy.no_photo": "A find needs a photograph.",
+  "ispy.photo_too_big": "That photograph is too big.",
+  "ispy.already_passed": "You have already given up on this one.",
+
+  "ispy.needs_https": "The camera needs a secure connection. Open this page over https.",
+  "ispy.no_camera": "No camera. You can still watch, and give up gracefully.",
+  "ispy.no_detector": "The detector is not installed. Run scripts/fetch-detector.sh.",
+
+  "ispy.round": "Round {round} of {rounds}",
+  "ispy.find": "Find {what}.",
+  "ispy.give_up": "I give up",
+  "ispy.gave_up": "Given up",
+  "ispy.you_found": "You found {what}.",
+  "ispy.they_found": "{name} found {what}.",
+  "ispy.nobody_found": "Nobody found {what}.",
+  "ispy.hunt_over": "You found {found} of {rounds}.",
+
+  "ispy.target.red_car": "a red car",
+  "ispy.target.white_car": "a white car",
+  "ispy.target.black_car": "a black car",
+  "ispy.target.blue_car": "a blue car",
+  "ispy.target.red_cup": "a red cup",
+  "ispy.target.white_cup": "a white cup",
+  "ispy.target.green_bottle": "a green bottle",
+  "ispy.target.blue_backpack": "a blue backpack",
+  "ispy.target.red_book": "a red book",
+  "ispy.target.black_chair": "a black chair",
+  "ispy.target.dog": "a dog",
+  "ispy.target.cat": "a cat",
+  "ispy.target.bird": "a bird",
+  "ispy.target.horse": "a horse",
+  "ispy.target.cow": "a cow",
+  "ispy.target.sheep": "a sheep",
+  "ispy.target.bicycle": "a bicycle",
+  "ispy.target.bus": "a bus",
+  "ispy.target.truck": "a truck",
+  "ispy.target.boat": "a boat",
+  "ispy.target.traffic_light": "a traffic light",
+  "ispy.target.stop_sign": "a stop sign",
+  "ispy.target.fire_hydrant": "a fire hydrant",
+  "ispy.target.bench": "a bench",
+  "ispy.target.potted_plant": "a potted plant",
+  "ispy.target.umbrella": "an umbrella",
+  "ispy.target.clock": "a clock",
+  "ispy.target.laptop": "a laptop",
+  "ispy.target.cell_phone": "a mobile phone",
+  "ispy.target.teddy_bear": "a teddy bear",
+  "ispy.target.pizza": "a pizza",
 };
 
 const nb = {
@@ -345,6 +403,7 @@ const nb = {
   "ui.category.cards": "Kortspill",
   "ui.category.board": "Brettspill",
   "ui.category.arcade": "Arkade",
+  "ui.category.world": "Verden",
 
   // -- lobby rows
   "ui.status.waiting": "venter",
@@ -412,6 +471,7 @@ const nb = {
   "game.pong.title": "Pong",
   "game.twentyfortyeight.title": "2048",
   "game.solitaire.title": "Kabal",
+  "game.ispy.title": "Jeg ser",
 
   "tictactoe.cell_range": "Ruten må være 0-{max}.",
   "tictactoe.cell_taken": "Ruten er opptatt.",
@@ -603,6 +663,57 @@ const nb = {
   "solitaire.you_won": "Alle kortene hjemme, på {moves} trekk.",
   "solitaire.stuck": "Ingen trekk igjen. {score} av {cards} hjemme.",
   "solitaire.run_over_watched": "Spillet endte med {score} av {cards} hjemme.",
+
+  "ispy.no_move": "Finn den, eller gi opp.",
+  "ispy.not_the_target": "Det er ikke det vi leter etter.",
+  "ispy.no_photo": "Et funn trenger et bilde.",
+  "ispy.photo_too_big": "Bildet er for stort.",
+  "ispy.already_passed": "Du har allerede gitt opp denne.",
+
+  "ispy.needs_https": "Kameraet trenger en sikker tilkobling. Åpne siden over https.",
+  "ispy.no_camera": "Ingen kamera. Du kan fortsatt se på, og gi pent opp.",
+  "ispy.no_detector": "Gjenkjenneren er ikke installert. Kjør scripts/fetch-detector.sh.",
+
+  "ispy.round": "Runde {round} av {rounds}",
+  "ispy.find": "Finn {what}.",
+  "ispy.give_up": "Jeg gir opp",
+  "ispy.gave_up": "Ga opp",
+  "ispy.you_found": "Du fant {what}.",
+  "ispy.they_found": "{name} fant {what}.",
+  "ispy.nobody_found": "Ingen fant {what}.",
+  "ispy.hunt_over": "Du fant {found} av {rounds}.",
+
+  "ispy.target.red_car": "en rød bil",
+  "ispy.target.white_car": "en hvit bil",
+  "ispy.target.black_car": "en svart bil",
+  "ispy.target.blue_car": "en blå bil",
+  "ispy.target.red_cup": "en rød kopp",
+  "ispy.target.white_cup": "en hvit kopp",
+  "ispy.target.green_bottle": "en grønn flaske",
+  "ispy.target.blue_backpack": "en blå ryggsekk",
+  "ispy.target.red_book": "en rød bok",
+  "ispy.target.black_chair": "en svart stol",
+  "ispy.target.dog": "en hund",
+  "ispy.target.cat": "en katt",
+  "ispy.target.bird": "en fugl",
+  "ispy.target.horse": "en hest",
+  "ispy.target.cow": "en ku",
+  "ispy.target.sheep": "en sau",
+  "ispy.target.bicycle": "en sykkel",
+  "ispy.target.bus": "en buss",
+  "ispy.target.truck": "en lastebil",
+  "ispy.target.boat": "en båt",
+  "ispy.target.traffic_light": "et trafikklys",
+  "ispy.target.stop_sign": "et stoppskilt",
+  "ispy.target.fire_hydrant": "en brannhydrant",
+  "ispy.target.bench": "en benk",
+  "ispy.target.potted_plant": "en potteplante",
+  "ispy.target.umbrella": "en paraply",
+  "ispy.target.clock": "en klokke",
+  "ispy.target.laptop": "en laptop",
+  "ispy.target.cell_phone": "en mobiltelefon",
+  "ispy.target.teddy_bear": "en bamse",
+  "ispy.target.pizza": "en pizza",
 };
 
 const DICTS = { en, nb };
