@@ -876,3 +876,22 @@ header {
   font-size: 0.85rem;
   color: var(--muted);
 }
+
+/* The ?debug readout. Off by default and mounted only when the query string asks
+   for it -- see games/_debug.js. Monospace and tabular so the digits do not
+   dance: a number that jitters in place is unreadable, and the whole point of
+   this box is to be read while something else is moving. */
+.readout {
+  margin: 0.75rem 0 0;
+  padding: 0.6rem 0.75rem;
+  max-width: 28rem;
+  border-radius: 8px;
+  background: var(--panel, rgba(127, 140, 160, 0.12));
+  color: var(--muted);
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.5;
+  white-space: pre;
+  overflow-x: auto;
+}

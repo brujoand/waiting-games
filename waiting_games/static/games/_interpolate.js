@@ -107,6 +107,13 @@ export function timeline(tickHz) {
   let gap = 1;
   let late = 0;
 
+  // Never used to draw anything: these only tell on the connection. A browser
+  // that has stopped painting, a server that has stopped sending, and arithmetic
+  // that has gone wrong are three different bugs, and from the sofa all three
+  // look exactly like "it feels choppy". See _debug.js.
+  let dropped = 0;
+  let arrived = null;
+
   // Where we last DREW -- which is not always where we wanted to be. Time must
   // not run backwards (re-anchoring origin to a faster path would otherwise
   // rewind the world), and just as importantly, a moment we could not draw is a
@@ -147,6 +154,9 @@ export function timeline(tickHz) {
 
       late = settle(Math.max(lateness, late * FORGET));
       gap = 1 + settle(Math.max(hole, 1 + (gap - 1) * FORGET) - 1);
+
+      dropped += hole - 1;
+      arrived = now;
 
       states.push({ tick, state });
       newest = tick;
@@ -206,8 +216,18 @@ export function timeline(tickHz) {
     },
 
     // For tests, and for anyone wondering why the game feels a step behind.
-    debug() {
-      return { delayTicks: delayTicks(), gap, held: states.length };
+    debug(now = null) {
+      return {
+        delayTicks: delayTicks(),
+        gap,
+        held: states.length,
+        dropped,
+        tickMs,
+        // How stale the newest state is. On a healthy line this sits under one
+        // tick and never grows: if it climbs, the server has stopped talking and
+        // no amount of renderer is going to help.
+        stateAge: now !== null && arrived !== null ? now - arrived : null,
+      };
     },
   };
 }

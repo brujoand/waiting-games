@@ -38,10 +38,17 @@ mise trust && mise install
 pip install -r requirements.txt pytest httpx
 
 python -m pytest -q                 # tests
+node --test tests/*.test.mjs        # ...and the renderer's, which pytest cannot see
 pre-commit run --all-files          # ruff, gitleaks, formatting
 uvicorn waiting_games.main:app --reload --port 8080
 docker build -t waiting-games .
 ```
+
+Load a real-time game with **`?debug`** for a readout: fps and the worst frame
+gap, the render delay, dropped states, and the measured milliseconds from a
+keypress to the snake actually turning. "It feels choppy" is three unrelated bugs
+wearing one coat — a browser that stopped painting, a server that stopped sending,
+and arithmetic that went wrong — and this is what tells them apart.
 
 ## Layout
 
