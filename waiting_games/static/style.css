@@ -675,6 +675,7 @@ button:disabled {
 .t48-grid {
   display: grid;
   grid-template-columns: repeat(var(--size), 1fr);
+  grid-template-rows: repeat(var(--size), 1fr);
   gap: 2.5%;
   padding: 2.5%;
   aspect-ratio: 1;
@@ -682,6 +683,11 @@ button:disabled {
   max-width: 24rem;
   background: #bbada0;
   border-radius: 8px;
+
+  /* Both layers are placed into the SAME tracks -- the empty squares, and the
+     tiles standing on top of them -- so a tile travelling from one square to
+     another is a grid item changing its area, and the browser has already worked
+     out what that is worth in pixels. Nothing here has to know the geometry. */
 
   /* The tiles size their numbers off the BOARD's width (cqw), so a 4x4 grid on a
      phone and on a desktop are the same picture at two scales. */
@@ -695,18 +701,22 @@ button:disabled {
   -webkit-tap-highlight-color: transparent;
 }
 
+/* The board underneath: sixteen holes, and they never change. */
+.t48-square {
+  border-radius: 4px;
+  background: rgba(238, 228, 218, 0.35);
+}
+
 .t48-tile {
   display: grid;
   place-items: center;
+  position: relative; /* the +points float hangs off this */
+  z-index: 1; /* ...and every tile stands on the squares, not among them */
   border-radius: 4px;
-  background: rgba(238, 228, 218, 0.35);
+  background: #eee4da;
   color: #776e65;
   font-weight: 700;
   font-size: clamp(1rem, 6.5cqw, 2rem);
-}
-
-.t48-tile[data-value] {
-  background: #eee4da;
 }
 
 .t48-tile[data-value="4"] {
@@ -761,23 +771,90 @@ button:disabled {
   box-shadow: 0 0 12px rgba(237, 194, 46, 0.8);
 }
 
-/* A tile that changed lands, rather than blinking into place. */
-.t48-pop {
-  animation: t48-pop 0.14s ease-out;
+/* The three things that can happen to a tile, and they must not look alike.
+   Sliding is the trip itself, animated in js off the server's account of the move.
+   The other two are what a player has to read at the END of that trip:
+
+   ARRIVING is the free tile. It was not there and now it is, so it fades up out of
+   nothing -- it never travelled, and must not look as though it did.
+
+   MERGING is two tiles becoming one. They slide together and the survivor swells
+   past its own size before settling, which is the only moment on the board with
+   any weight to it: it is the move that scored. */
+.t48-arrive {
+  animation: t48-arrive 0.14s ease-out;
 }
 
-@keyframes t48-pop {
+@keyframes t48-arrive {
   from {
-    transform: scale(0.82);
+    opacity: 0;
+    transform: scale(0.4);
   }
+
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.t48-merge {
+  animation: t48-merge 0.16s ease-out;
+}
+
+@keyframes t48-merge {
+  from {
+    transform: scale(0.9);
+  }
+
+  55% {
+    transform: scale(1.16);
+  }
+
   to {
     transform: scale(1);
   }
 }
 
+/* What the merge paid, leaving the tile that earned it. It drifts up off the tile
+   and over whatever is behind it -- the board, a neighbour, any colour in the ramp
+   -- so it carries its own contrast rather than trusting the one background it
+   happened to start on. */
+.t48-gain {
+  position: absolute;
+  top: -0.2em;
+  right: -0.1em;
+  color: #776e65;
+  font-size: 0.55em;
+  font-weight: 700;
+  text-shadow: 0 0 3px rgba(249, 246, 242, 0.9);
+  pointer-events: none;
+  animation: t48-gain 0.6s ease-out forwards;
+}
+
+@keyframes t48-gain {
+  from {
+    opacity: 0.9;
+    transform: translateY(0);
+  }
+
+  to {
+    opacity: 0;
+    transform: translateY(-1.2em);
+  }
+}
+
+/* The board still has to be READABLE without any of it -- so the tiles stop
+   moving, they do not stop existing. js skips the slide for the same reason; this
+   is what catches the css half. */
 @media (prefers-reduced-motion: reduce) {
-  .t48-pop {
+  .t48-arrive,
+  .t48-merge,
+  .t48-gain {
     animation: none;
+  }
+
+  .t48-gain {
+    display: none;
   }
 }
 

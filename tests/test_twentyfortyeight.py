@@ -128,6 +128,97 @@ def test_a_slide_that_moves_nothing_does_nothing():
     assert not game.over
 
 
+# -- the account of the slide ------------------------------------------------
+#
+# Two boards in a row cannot say how the second became the first. A 4 sitting where
+# there was none is either a 4 that slid in or two 2s that met, and the browser has
+# to draw those two things differently -- so the engine, which is the only thing
+# that knows, says which. Everything the animation does rests on this being true.
+
+
+def journeys(game):
+    return {(step["from"], step["to"]): step for step in game.slid}
+
+
+def test_a_slide_says_where_every_tile_went():
+    game = solo(board([0, 0, 0, 2], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]))
+
+    game.apply_move(A, {"dir": "left"})
+
+    travelled = journeys(game)[(3, 0)]
+    assert travelled["value"] == 2  # the value it carried, not the one it becomes
+    assert not travelled["merged"]
+
+
+def test_both_halves_of_a_merge_travel_to_the_same_square():
+    """The two tiles that met, and the fact that they met. Without the second, the
+    browser cannot tell this from a 2 that simply slid to the wall next to another.
+    """
+    game = solo(board([2, 0, 0, 2], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]))
+
+    game.apply_move(A, {"dir": "left"})
+
+    travelled = journeys(game)
+    assert travelled[(0, 0)]["merged"]  # it never moved, and it still merged
+    assert travelled[(3, 0)]["merged"]  # it crossed the row to do it
+    assert game.tiles[0] == 4
+
+
+def test_a_tile_that_does_not_move_is_still_accounted_for():
+    """Silence would mean "gone". A tile the slide does not mention is one the
+    browser has nothing to do with -- so it says even the journey of no distance."""
+    game = solo(board([2, 0, 4, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]))
+
+    game.apply_move(A, {"dir": "left"})
+
+    assert (0, 0) in journeys(game)  # the 2 was already against the wall
+
+
+def test_the_slide_accounts_for_every_tile_on_the_board():
+    game = solo(board([2, 4, 0, 8], [0, 2, 0, 0], [16, 0, 0, 4], [0, 0, 32, 0]))
+    before = [cell for cell, value in enumerate(game.tiles) if value]
+
+    game.apply_move(A, {"dir": "down"})
+
+    assert sorted(step["from"] for step in game.slid) == before
+
+
+def test_a_slide_says_where_the_new_tile_landed():
+    game = solo(board([2, 2, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]))
+
+    game.apply_move(A, {"dir": "left"})
+
+    # The one square that no tile travelled to, and yet has a tile standing on it.
+    assert game.spawned not in [step["to"] for step in game.slid]
+    assert game.tiles[game.spawned] in (2, 4)
+
+
+def test_a_reversed_line_reports_the_cells_it_really_used():
+    """`up` and `right` read their lines backwards, which is what keeps them from
+    being a second copy of the slide. The journeys must come back the right way
+    round anyway -- a slide reported in mirror image would animate every tile into
+    the wrong wall, and the board would still be correct, so nothing would catch it.
+    """
+    game = solo(board([4, 2, 2, 0], [0, 0, 0, 0], [0, 0, 0, 0], [0, 0, 0, 0]))
+
+    game.apply_move(A, {"dir": "right"})
+
+    travelled = journeys(game)
+    assert travelled[(1, 3)]["merged"]  # the twos met at the right-hand wall...
+    assert travelled[(2, 3)]["merged"]
+    assert not travelled[(0, 2)]["merged"]  # ...and the four rode along behind
+
+
+def test_a_board_that_has_only_been_dealt_has_no_slide_to_report():
+    """The two tiles a new board is dealt did not travel to get there, and a browser
+    joining a game in progress has no board to travel FROM. Both are the same thing:
+    nothing to animate, only something to draw."""
+    game = solo()
+
+    assert game.slid == []
+    assert game.public_state()["moves"] == 0
+
+
 @pytest.mark.parametrize("heading", ["sideways", "", None, 3])
 def test_a_bogus_direction_is_rejected(heading):
     game = solo()
