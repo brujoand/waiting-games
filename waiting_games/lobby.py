@@ -45,6 +45,8 @@ RESERVED_KEYS = frozenset(
         "winner",
         "draw",
         "connected",
+        "tick",
+        "tickHz",
     }
 )
 
@@ -114,6 +116,14 @@ class Session:
             "winner": engine.winner,
             "draw": engine.over and engine.winner is None,
             "connected": [sub for sub, _ in self.sockets],
+            # The clock is the platform's, so it is the platform that reports it.
+            # A real-time game's renderer needs BOTH: the rate to know how long a
+            # tick lasts, and the index to know how many of them a state is worth.
+            **(
+                {"tick": engine.ticks, "tickHz": engine.tick_hz}
+                if engine.realtime
+                else {}
+            ),
             **engine.view(seat),
         }
 
@@ -370,6 +380,7 @@ class Lobby:
                     if engine.over:
                         break
                     engine.tick(dt)
+                    engine.ticks += 1
                     frames = session.frames()
 
                 # Outside the lock, and WITHOUT waiting: the clock must not be

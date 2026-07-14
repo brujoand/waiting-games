@@ -448,3 +448,57 @@ def test_one_slow_player_does_not_freeze_the_room():
         lobby.drop(session.id)
 
     asyncio.run(scenario())
+
+
+def test_a_real_time_state_says_which_tick_it_is():
+    """The browser slides a smooth game between the states it is sent, and how far
+    to slide depends on how much game time separates them.
+
+    `seconds` cannot answer that: it is rounded to a tenth, and at 8 Hz a tick is
+    0.125s, so a one-tick gap and a two-tick gap both round to 0.2. The renderer
+    therefore could not tell a state that was merely LATE from one that never
+    arrived at all -- and lobby.stream() drops states at a busy socket on purpose.
+    Guessing it from arrival times is what used to teleport the snake a whole cell.
+
+    So the platform puts the tick INDEX on the wire, and it is the clock that
+    advances it -- not the game, which could forget.
+    """
+
+    async def scenario():
+        lobby = Lobby()
+        session = lobby.create("snake", ALICE)
+        lobby.begin(session.id, ALICE)
+
+        state = session.state(seat=0)
+        assert state["tick"] == 0
+        assert state["tickHz"] == session.engine.tick_hz
+
+        watcher = Watcher()
+        session.sockets.add((A, watcher))
+        session.note_sockets_changed()
+        await lobby.launch(session)
+        await asyncio.sleep(0.5)  # a few ticks at 8 Hz
+
+        ticks = [f["data"]["tick"] for f in watcher.frames if "tick" in f["data"]]
+        assert ticks, "a real-time state must carry its tick index"
+        assert ticks == sorted(ticks), (
+            f"the tick index must never go backwards: {ticks}"
+        )
+        assert ticks[-1] >= 2, f"the clock should have advanced by now: {ticks}"
+        # Consecutive, so a hole in what the CLIENT receives means a dropped state
+        # rather than a server that skipped a number.
+        assert ticks == list(range(ticks[0], ticks[0] + len(ticks))), ticks
+
+        lobby.drop(session.id)
+
+    asyncio.run(scenario())
+
+
+def test_a_turn_based_game_carries_no_clock_on_the_wire():
+    lobby = Lobby()
+    session = lobby.create("tictactoe", ALICE)
+    lobby.join(session.id, BOB)
+
+    state = session.state(seat=0)
+    assert "tick" not in state
+    assert "tickHz" not in state
