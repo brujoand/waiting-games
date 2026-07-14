@@ -74,7 +74,13 @@ export function create({ root, me, send }) {
   // After canvas(), which replaces the root's children -- same reason hint() is.
   // The paint loop above closes over this, and only ever runs from a
   // requestAnimationFrame, which is to say after this line.
-  const meter = readout(root);
+  //
+  // It gets the board so it can count the raw pointer events the browser delivers,
+  // BEFORE swipe() has an opinion about them. "The touch controls did not work" is
+  // several different bugs -- a listener that never fired, a gesture iOS took back
+  // to scroll with, a swipe below the threshold, a move the server rejected -- and
+  // they are indistinguishable from the sofa and need different fixes.
+  const meter = readout(root, board.element);
 
   // One deduper for every way of steering. A swipe, a key and a button are all
   // the same intent, and if each kept its own idea of what the server was last
@@ -101,7 +107,13 @@ export function create({ root, me, send }) {
       // newest thing we have. A push that carries no new tick -- somebody
       // connecting, somebody leaving -- is dropped on the floor by accept(),
       // which is why opening the page no longer stutters everyone else's snake.
-      clock.accept(game, game.tick, performance.now());
+      const now = performance.now();
+      clock.accept(game, game.tick, now);
+
+      // The gaps between arrivals are the connection's real character, and they
+      // are what every constant in _interpolate.js is tuned against. Measure them
+      // on the machine that has the problem.
+      meter?.arrived(now, game.tick);
     },
     destroy() {
       board.destroy();
