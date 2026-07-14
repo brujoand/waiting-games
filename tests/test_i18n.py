@@ -164,6 +164,15 @@ def test_no_english_prose_is_hardcoded_in_the_frontend():
     for path in sorted(STATIC.rglob("*.js")):
         if path.name == "i18n.js":  # the dictionaries, obviously
             continue
+        if path.name == "_debug.js":
+            # The ?debug readout is an instrument, not a screen. No player can see
+            # it -- it does not exist unless the URL asks for it by name -- and its
+            # words are the ones a bug report gets written in: "worst frame",
+            # "cells/tick", "key -> turn". Translating those would not help a
+            # Norwegian player, who is not looking at them, and would cost the
+            # dictionary a page of jargon to be kept in step with a diagnostic that
+            # changes every time the thing it diagnoses does.
+            continue
 
         for line_number, line in enumerate(path.read_text().splitlines(), start=1):
             code = line.split("//", 1)[0]  # comments may say what they like
