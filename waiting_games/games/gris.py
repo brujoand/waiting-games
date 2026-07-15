@@ -205,9 +205,13 @@ class Gris(Game):
             "round": self.round,
             "word": WORD,
             # Keyed by player, not seat, and this is the score: it is how close each
-            # of them is to being the pig.
+            # of them is to being the pig. Zero for everyone before the first deal:
+            # the lobby broadcasts this board the moment the session exists, which is
+            # before start() has sized `letters`, so a seat past its end has simply
+            # not lost anything yet.
             "counts": {
-                player: self.letters[seat] for seat, player in enumerate(self.players)
+                player: self.letters[seat] if seat < len(self.letters) else 0
+                for seat, player in enumerate(self.players)
             },
             # THAT you have committed a card, never WHICH. Everyone can see a card
             # face-down on the table.
@@ -225,7 +229,10 @@ class Gris(Game):
         """Your cards are yours. A spectator sees no hand at all -- and neither does
         a player see anyone else's, which is what makes noticing the game."""
         state = self.public_state()
-        if seat is not None:
+        # `started`, not `seat is not None`: before the deal there are no hands to
+        # index, and the lobby shows a seated player this board before start() has
+        # dealt one -- so a seat would index an empty list, the same IndexError.
+        if seat is not None and self.started:
             state["hand"] = list(self.hands[seat])
             state["chosen"] = self.chosen[seat]
             # The server already knows; making the browser re-derive it would be a
