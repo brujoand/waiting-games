@@ -21,7 +21,9 @@ from waiting_games.games.draw import (
     DRAWN_WELL,
     GRACE,
     MAX_POINTS,
+    MAX_SKIPS,
     SOLVE,
+    SUMMARY,
     WORDS,
     Draw,
 )
@@ -378,3 +380,110 @@ def test_an_unknown_action_is_refused():
     game = table()
     with rejected("draw.unknown_action"):
         game.apply_move(A, {"a": "wiggle"})
+
+
+# ==========================================================================
+# The drawer skips a word
+# ==========================================================================
+
+
+def test_the_drawer_skips_a_word_for_a_fresh_one():
+    game = table(words=("dog", "cat", "sun", "fox"))
+    assert game.word == "dog"
+    assert game.skips_left == MAX_SKIPS
+    game.tick(5.0)  # some think-time has gone by
+    assert game.clock < GRACE
+
+    game.apply_move(A, {"a": "skip"})
+
+    assert game.word == "fox"  # the next word off the deck
+    assert game.skips_left == MAX_SKIPS - 1
+    assert game.phase == "reveal"
+    assert game.clock == GRACE  # a fresh word gets fresh think-time
+    assert game.strokes == []
+
+
+def test_a_skip_re_deals_the_round_and_undoes_a_reveal_solve():
+    # A guess made during the reveal was against the OLD word; the skip wipes it, and
+    # refunds the points it scored so a skip cannot mint score.
+    game = table(words=("dog", "cat", "sun", "fox"))
+    game.apply_move(B, {"a": "guess", "text": "dog"})  # solved the old word
+    assert game.solved and game.scores[1] == SOLVE
+
+    game.apply_move(A, {"a": "skip"})
+
+    assert game.guesses == []
+    assert game.solved == []
+    assert game.scores[1] == 0
+
+
+def test_only_the_drawer_may_skip():
+    game = table(words=("dog", "cat", "sun", "fox"))
+    with rejected("draw.not_the_drawer"):
+        game.apply_move(B, {"a": "skip"})
+
+
+def test_a_word_cannot_be_skipped_once_the_pen_is_down():
+    game = table(words=("dog", "cat", "sun", "fox"))
+    start_drawing(game)  # phase is now "drawing"
+    with rejected("draw.skip_too_late"):
+        game.apply_move(A, {"a": "skip"})
+
+
+def test_the_skips_run_out_after_three():
+    game = table(words=("dog", "cat", "sun", "w1", "w2", "w3"))
+    for _ in range(MAX_SKIPS):
+        game.apply_move(A, {"a": "skip"})
+    assert game.skips_left == 0
+    assert game.word == "w3"
+    with rejected("draw.no_skips_left"):
+        game.apply_move(A, {"a": "skip"})
+
+
+def test_each_drawer_opens_their_turn_with_a_fresh_three():
+    game = table(words=("dog", "cat", "sun", "fox"))
+    game.apply_move(A, {"a": "skip"})
+    assert game.skips_left == MAX_SKIPS - 1
+
+    # Alice never draws; her grace expires, the recap passes, Bob takes the pen.
+    game.tick(GRACE)
+    assert game.phase == "recap"
+    game.tick(SUMMARY)
+    assert game.drawer == 1  # Bob
+    assert game.skips_left == MAX_SKIPS
+
+
+def test_a_skipped_word_never_leaks_to_a_guesser_or_a_spectator():
+    game = table(words=("dog", "cat", "sun", "fox"))
+    game.apply_move(A, {"a": "skip"})
+    assert game.word == "fox"
+    assert not leaks(game.view(1), "fox")  # bob, a guesser, may not see it
+    assert not leaks(game.view(None), "fox")  # nor a spectator
+
+
+def test_the_drawer_still_sees_the_word_after_a_skip():
+    game = table(words=("dog", "cat", "sun", "fox"))
+    game.apply_move(A, {"a": "skip"})
+    assert leaks(game.view(0), "fox")  # alice is drawing it; she must see it
+
+
+def test_a_random_skip_stays_distinct_from_every_word_already_dealt():
+    # No forced words: the skip samples WORDS, and must not hand back a word another
+    # round is already holding, nor the very word it is replacing.
+    game = Draw()
+    for player in (A, B, C):
+        game.add_player(player)
+    game.start()
+    dealt = list(game.words)
+
+    game.apply_move(game.players[0], {"a": "skip"})
+
+    assert game.word != dealt[0]  # not the word it replaced
+    assert game.word not in dealt[1:]  # nor a future round's word
+
+
+def test_skips_are_visible_on_the_wire_for_the_drawers_button():
+    game = table(words=("dog", "cat", "sun", "fox"))
+    assert game.view(0)["skips"] == MAX_SKIPS
+    game.apply_move(A, {"a": "skip"})
+    assert game.view(0)["skips"] == MAX_SKIPS - 1

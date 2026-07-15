@@ -1790,6 +1790,12 @@ header {
   padding: 0.35rem 0.7rem;
   font-size: 0.85rem;
 }
+.draw-skip {
+  display: none;
+}
+.draw-skip[data-on="true"] {
+  display: inline-flex;
+}
 
 .draw-sidebar {
   grid-area: side;

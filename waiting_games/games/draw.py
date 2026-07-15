@@ -90,6 +90,13 @@ MAX_POINTS = 4000
 MAX_STROKES = 600
 MAX_GUESS = 60  # characters; a guess is a word or two, not an essay
 
+# A drawer handed a word they cannot draw is not stuck with it: they may skip it for
+# a fresh one, up to this many times a turn. The skip only exists BEFORE the first
+# stroke -- it is "I don't like this word", not "this drawing is going badly" -- so it
+# resets the think-time clock and hands over a new word with the canvas still blank.
+# Each drawer gets a fresh three when their own turn opens.
+MAX_SKIPS = 3
+
 
 def _normalise(text: str) -> str:
     """Fold a word or guess to the one form they are compared in.
@@ -133,6 +140,11 @@ class Draw(RealTimeGame):
         self.word = ""
         # This round's word and every future round's. NEVER goes on the wire.
         self.words: list[str] = []
+        # Forced words consumed so far -- the initial deal plus every skip. Only
+        # meaningful when _forced_words is set; a skip draws the next one from here so
+        # a test can pin what the drawer is handed next, exactly as the deal is.
+        self._forced_taken = 0
+        self.skips_left = MAX_SKIPS
         self.clock = GRACE
 
         # The picture: [{"c", "w", "p": [x0, y0, x1, y1, ...]}].
@@ -162,6 +174,7 @@ class Draw(RealTimeGame):
             if len(self._forced_words) < n:
                 raise InvalidMove("draw.not_enough_words")
             chosen = list(self._forced_words[:n])
+            self._forced_taken = n
         else:
             chosen = self.rng.sample(WORDS, n)
 
@@ -180,6 +193,7 @@ class Draw(RealTimeGame):
         self.points_used = 0
         self.solved = []
         self.guesses = []
+        self.skips_left = MAX_SKIPS
 
     @property
     def _guessers(self) -> list[int]:
@@ -205,6 +219,8 @@ class Draw(RealTimeGame):
             self._guess(seat, move)
         elif action == "accept":
             self._accept(seat, move)
+        elif action == "skip":
+            self._skip(seat)
         else:
             raise InvalidMove("draw.unknown_action")
 
@@ -312,6 +328,46 @@ class Draw(RealTimeGame):
         # travelling, so an accepted near-miss of the word cannot leak it either.
         target["correct"] = True
 
+    # -- the drawer skips a word they cannot draw ------------------------
+
+    def _skip(self, seat: int) -> None:
+        if seat != self.drawer:
+            raise InvalidMove("draw.not_the_drawer")
+        # Only before the pen touches the canvas. Once DRAWING has begun the clock is
+        # the guessers' and a skip would rewind their round; that is what Clear is for.
+        if self.phase != REVEAL:
+            raise InvalidMove("draw.skip_too_late")
+        if self.skips_left <= 0:
+            raise InvalidMove("draw.no_skips_left")
+
+        self.skips_left -= 1
+        self.words[self.round] = self._new_word()
+        # Re-deal this round in place: the new word, a fresh grace clock, a blank
+        # slate. Nobody has drawn yet, and any reveal-phase guess was against a word
+        # that no longer exists, so the log and the solves start over -- and a seat
+        # paid for solving the old word is refunded, or the skip would mint points.
+        for seat in self.solved:
+            self.scores[seat] -= SOLVE
+        self.word = self.words[self.round]
+        self.clock = GRACE
+        self.solved = []
+        self.guesses = []
+
+    def _new_word(self) -> str:
+        """A replacement word, distinct from every word this game has dealt.
+
+        Excluding all of self.words keeps the skip from handing back a word another
+        round is already holding, so the rounds stay distinct even after a skip.
+        """
+        if self._forced_words is not None:
+            if self._forced_taken >= len(self._forced_words):
+                raise InvalidMove("draw.not_enough_words")
+            word = self._forced_words[self._forced_taken]
+            self._forced_taken += 1
+            return word
+        pool = [w for w in WORDS if w not in self.words]
+        return self.rng.choice(pool)
+
     # -- the clock -------------------------------------------------------
 
     def tick(self, dt: float) -> None:
@@ -379,6 +435,10 @@ class Draw(RealTimeGame):
             "solved": [self.players[seat] for seat in self.solved],
             "guesses": [self._public_guess(g) for g in self.guesses],
             "previous": self.previous,
+            # How many skips the drawer has left this turn. Not a secret -- it says
+            # nothing about the word -- so the whole table sees it; only the drawer's
+            # own client turns it into a button.
+            "skips": self.skips_left,
             # No score before the deal: scores are sized in _on_start, and the lobby
             # shows a waiting board too.
             "counts": {
