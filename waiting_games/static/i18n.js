@@ -41,6 +41,7 @@ const en = {
   "ui.category.board": "Board",
   "ui.category.arcade": "Arcade",
   "ui.category.world": "The world",
+  "ui.category.party": "Party",
 
   // -- lobby rows
   "ui.status.waiting": "waiting",
@@ -111,6 +112,7 @@ const en = {
   "game.twentyfortyeight.title": "2048",
   "game.solitaire.title": "Solitaire",
   "game.ispy.title": "I Spy",
+  "game.draw.title": "Draw",
 
   // -- a playing card, shared by every game that deals one (games/_cards.js)
   //
@@ -369,6 +371,34 @@ const en = {
   "ispy.target.cell_phone": "a mobile phone",
   "ispy.target.teddy_bear": "a teddy bear",
   "ispy.target.pizza": "a pizza",
+
+  // -- draw
+  "draw.not_enough_words": "Not enough words for this many players.",
+  "draw.between_rounds": "Wait for the next round to start.",
+  "draw.unknown_action": "That is not a move in this game.",
+  "draw.not_the_drawer": "Only the drawer can do that.",
+  "draw.drawer_cannot_guess": "You are drawing, so you already know the word.",
+  "draw.guess_required": "Type a guess.",
+  "draw.guess_length": "A guess can be at most {max} characters.",
+  "draw.already_solved": "That has already been guessed.",
+  "draw.no_such_guess": "There is no such guess to accept.",
+  "draw.undo": "Undo",
+  "draw.clear": "Clear",
+  "draw.guess_send": "Guess",
+  "draw.guess_placeholder": "Type your guess...",
+  "draw.accept": "Accept",
+  "draw.round": "Round {round}/{rounds}",
+  "draw.seconds": "{n}s",
+  "draw.next_in": "Next in {n}s",
+  "draw.the_word_was": "The word was {word}",
+  "draw.you_draw": "Draw: {word}",
+  "draw.you_got_it": "You got it: {word}",
+  "draw.you_are_drawing": "You are drawing",
+  "draw.someone_draws": "{name} is drawing",
+  "draw.waiting_others": "You got it! Waiting for the others.",
+  "draw.round_over": "Round over.",
+  "draw.spectating": "You are watching.",
+  "draw.waiting_to_start": "Waiting for the game to start...",
 };
 
 const nb = {
@@ -404,6 +434,7 @@ const nb = {
   "ui.category.board": "Brettspill",
   "ui.category.arcade": "Arkade",
   "ui.category.world": "Verden",
+  "ui.category.party": "Fest",
 
   // -- lobby rows
   "ui.status.waiting": "venter",
@@ -472,6 +503,7 @@ const nb = {
   "game.twentyfortyeight.title": "2048",
   "game.solitaire.title": "Kabal",
   "game.ispy.title": "Jeg ser",
+  "game.draw.title": "Tegn",
 
   "tictactoe.cell_range": "Ruten må være 0-{max}.",
   "tictactoe.cell_taken": "Ruten er opptatt.",
@@ -714,6 +746,34 @@ const nb = {
   "ispy.target.cell_phone": "en mobiltelefon",
   "ispy.target.teddy_bear": "en bamse",
   "ispy.target.pizza": "en pizza",
+
+  // -- draw
+  "draw.not_enough_words": "Ikke nok ord til så mange spillere.",
+  "draw.between_rounds": "Vent til neste runde starter.",
+  "draw.unknown_action": "Det er ikke et trekk i dette spillet.",
+  "draw.not_the_drawer": "Bare tegneren kan gjøre det.",
+  "draw.drawer_cannot_guess": "Du tegner, så du vet allerede ordet.",
+  "draw.guess_required": "Skriv en gjetning.",
+  "draw.guess_length": "En gjetning kan være høyst {max} tegn.",
+  "draw.already_solved": "Det er allerede gjettet.",
+  "draw.no_such_guess": "Det finnes ingen slik gjetning å godta.",
+  "draw.undo": "Angre",
+  "draw.clear": "Tøm",
+  "draw.guess_send": "Gjett",
+  "draw.guess_placeholder": "Skriv gjetningen din...",
+  "draw.accept": "Godta",
+  "draw.round": "Runde {round}/{rounds}",
+  "draw.seconds": "{n}s",
+  "draw.next_in": "Neste om {n}s",
+  "draw.the_word_was": "Ordet var {word}",
+  "draw.you_draw": "Tegn: {word}",
+  "draw.you_got_it": "Du klarte det: {word}",
+  "draw.you_are_drawing": "Du tegner",
+  "draw.someone_draws": "{name} tegner",
+  "draw.waiting_others": "Du klarte det! Venter på de andre.",
+  "draw.round_over": "Runden er over.",
+  "draw.spectating": "Du ser på.",
+  "draw.waiting_to_start": "Venter på at spillet skal starte...",
 };
 
 const DICTS = { en, nb };

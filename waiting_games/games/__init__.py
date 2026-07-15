@@ -4,6 +4,7 @@ from .base import Game, InvalidMove, RealTimeGame, Result
 from .battleship import Battleship
 from .connectfour import ConnectFour
 from .dotsandboxes import DotsAndBoxes
+from .draw import Draw
 from .gris import Gris
 from .hangman import Hangman
 from .idiot import Idiot
@@ -24,7 +25,9 @@ from .twentyfortyeight import TwentyFortyEight
 # "world" is the shelf for a game whose board is not on the screen. I Spy is the
 # only one so far, and it is the reason the shelf exists: nothing about it is a
 # card, a board or an arcade cabinet -- you play it by looking out of the window.
-CATEGORIES = ("cards", "board", "arcade", "world")
+# "party" is the shelf for a game that is really about the people in the room: Draw
+# has a board, but the board is a prop for the guessing, the way I Spy's world is.
+CATEGORIES = ("cards", "board", "arcade", "world", "party")
 
 # In CATEGORIES order, and grouped by it. The lobby lists the catalogue in this
 # order and reads the shelves off it in the order they first appear, so the grouping
@@ -45,6 +48,7 @@ GAMES: dict[str, type[Game]] = {
     Pong.key: Pong,
     TwentyFortyEight.key: TwentyFortyEight,
     ISpy.key: ISpy,
+    Draw.key: Draw,
 }
 
 __all__ = ["CATEGORIES", "GAMES", "Game", "InvalidMove", "RealTimeGame", "Result"]
