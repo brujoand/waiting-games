@@ -513,6 +513,44 @@ def test_the_deck_holds_exactly_one_rank_per_player(players):
     )
 
 
+# -- the waiting room --------------------------------------------------------
+
+
+def waiting(players=(A, B, C)):
+    """A table that has been sat down at but not yet started -- exactly what the
+    lobby broadcasts the moment a session is created."""
+    game = Gris()
+    for player in players:
+        game.add_player(player)
+    return game
+
+
+def test_the_board_can_be_shown_before_the_deal():
+    """The lobby broadcasts this board the instant the session exists, which is
+    before start() has run -- and _on_start is where every per-seat list (letters,
+    hands, chosen) is sized. Index one of them by seat before it exists and the
+    very first socket into the room takes an IndexError instead of a board."""
+    game = waiting()
+
+    spectator = game.view(None)
+    assert spectator["counts"] == {A: 0, B: 0, C: 0}  # seated, and nobody has lost yet
+    assert spectator["passed"] == []
+    assert spectator["touched"] == []
+    assert spectator["pig"] is None
+    assert cards_in(spectator) == set()  # no hands dealt, so no cards to leak
+
+
+def test_a_seated_player_sees_no_hand_before_the_deal():
+    """A seat's own view is built before the deal too, and there is no hand in it
+    to show -- a fact it must report without indexing a hand that isn't there."""
+    game = waiting()
+
+    seen = game.view(0)  # alice's own view, still in the waiting room
+    assert "hand" not in seen
+    assert "four" not in seen
+    assert cards_in(seen) == set()
+
+
 # -- the secrets -------------------------------------------------------------
 
 
