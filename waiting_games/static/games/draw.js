@@ -54,8 +54,6 @@ export function create({ root, me, send }) {
   root.className = "board-draw";
 
   let latest = null; // the newest state, for the paint loop to read
-  let lastRound = null; // to clear the log when a new round is dealt
-  let lastGuessId = -1; // the highest guess id already in the log
 
   // The pen's local, optimistic state.
   let drawing = false; // a stroke in progress right now
@@ -117,11 +115,20 @@ export function create({ root, me, send }) {
     textContent: t("draw.clear"),
     onclick: () => send({ a: "clear" }),
   });
+  // Swap this word for a fresh one, before the pen goes down. Its own toggle, not
+  // the tools' one: the tools show all through drawing, but the skip is a reveal-only
+  // "I can't draw this", so refreshControls hides it the moment the first stroke lands.
+  const skipButton = el("button", {
+    className: "draw-tool draw-skip",
+    type: "button",
+    onclick: () => send({ a: "skip" }),
+  });
   const tools = el("div", { className: "draw-tools" }, [
     swatches,
     sizes,
     undoButton,
     clearButton,
+    skipButton,
   ]);
 
   const stage = el("div", { className: "draw-stage" }, [canvasEl, tools]);
@@ -131,6 +138,7 @@ export function create({ root, me, send }) {
   const scoreRows = new Map();
 
   const log = el("ul", { className: "draw-log" });
+  const logRows = new Map(); // guess id -> { row, correct }
 
   const guessInput = el("input", {
     className: "draw-guess-input",
@@ -401,16 +409,30 @@ export function create({ root, me, send }) {
   }
 
   function refreshLog(game) {
-    // A new round clears the board's chat.
-    if (game.round !== lastRound) {
-      lastRound = game.round;
-      log.replaceChildren();
-      lastGuessId = -1;
+    // Reconcile the log against the guesses on the wire, keyed by id. Guess ids never
+    // repeat, so a new round -- and a skip, which empties the round's guesses without
+    // changing its number -- both show up as ids that have simply vanished, and their
+    // rows are dropped. A guess whose `correct` flipped (the drawer waved it through)
+    // is rebuilt in place, so the Accept turns into a tick on every screen, not just
+    // the server's scoreboard.
+    const present = new Set(game.guesses.map((g) => g.id));
+    for (const [id, entry] of logRows) {
+      if (!present.has(id)) {
+        entry.row.remove();
+        logRows.delete(id);
+      }
     }
     for (const guess of game.guesses) {
-      if (guess.id <= lastGuessId) continue;
-      lastGuessId = guess.id;
-      log.append(logRow(game, guess));
+      const entry = logRows.get(guess.id);
+      if (!entry) {
+        const row = logRow(game, guess);
+        logRows.set(guess.id, { row, correct: guess.correct });
+        log.append(row);
+      } else if (entry.correct !== guess.correct) {
+        const row = logRow(game, guess);
+        entry.row.replaceWith(row);
+        logRows.set(guess.id, { row, correct: guess.correct });
+      }
     }
     log.scrollTop = log.scrollHeight;
   }
@@ -423,9 +445,15 @@ export function create({ root, me, send }) {
 
     tools.dataset.on = String(iAmDrawer && live && !game.over);
     canvasEl.dataset.pen = String(canDraw());
-    // The log is append-only, so a row's Accept button is not revisited when the
-    // round ends. Gate the whole log instead: once it is not the drawer's live
-    // round, every Accept in it hides at once, in CSS.
+    // Skip only exists in the reveal, and only while the drawer has one left. Its own
+    // toggle: the rest of the tools stay up all through drawing.
+    const canSkip =
+      iAmDrawer && game.phase === "reveal" && (game.skips ?? 0) > 0 && !game.over;
+    skipButton.dataset.on = String(canSkip);
+    skipButton.textContent = t("draw.skip", { n: game.skips ?? 0 });
+    // A row's Accept button is left in place when the round ends -- refreshLog only
+    // rebuilds a row whose correctness changed. Gate the whole log instead: once it is
+    // not the drawer's live round, every Accept still in it hides at once, in CSS.
     log.dataset.live = String(iAmDrawer && live && !game.over);
 
     const canGuess = seated && !iAmDrawer && !solved && live && !game.over;
