@@ -1659,3 +1659,247 @@ header {
   gap: 0.8rem;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
 }
+
+/* -- Draw ------------------------------------------------------------------ */
+
+.board-draw {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 15rem);
+  grid-template-areas: "prompt prompt" "bar bar" "stage side";
+  gap: 0.6rem 1rem;
+  margin-bottom: 1rem;
+}
+
+/* On a phone the sidebar drops under the board rather than squeezing it. */
+@media (max-width: 640px) {
+  .board-draw {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-areas: "prompt" "bar" "stage" "side";
+  }
+}
+
+.draw-prompt {
+  grid-area: prompt;
+  margin: 0;
+  min-height: 1.6em;
+  font-size: 1.3rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-align: center;
+}
+.draw-prompt[data-role="guesser"] {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+}
+.draw-prompt[data-role="recap"] {
+  color: var(--accent);
+}
+
+.draw-topbar {
+  grid-area: bar;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 0.95rem;
+}
+.draw-topbar[data-on="false"] {
+  display: none;
+}
+.draw-timer {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+.draw-timer[data-low="true"] {
+  color: #d9534f;
+}
+
+.draw-stage {
+  grid-area: stage;
+  display: grid;
+  gap: 0.6rem;
+  align-content: start;
+}
+.draw-stage[data-on="false"] {
+  display: none;
+}
+
+.draw-canvas {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 8px;
+  background: #ffffff;
+  border: 1px solid var(--line);
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.draw-canvas[data-pen="true"] {
+  cursor: crosshair;
+  border-color: var(--accent);
+}
+
+/* The tools only exist for the drawer. */
+.draw-tools {
+  display: none;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.draw-tools[data-on="true"] {
+  display: flex;
+}
+.draw-swatches,
+.draw-sizes {
+  display: flex;
+  gap: 0.3rem;
+}
+.draw-swatch {
+  width: 1.6rem;
+  height: 1.6rem;
+  padding: 0;
+  border-radius: 50%;
+  border: 2px solid var(--line);
+}
+.draw-swatch[data-on="true"] {
+  border-color: var(--ink);
+  transform: scale(1.12);
+}
+.draw-size {
+  display: grid;
+  place-items: center;
+  width: 1.9rem;
+  height: 1.9rem;
+  padding: 0;
+}
+.draw-size[data-on="true"] {
+  border-color: var(--ink);
+  background: var(--panel);
+}
+.draw-dot {
+  display: block;
+  border-radius: 50%;
+  background: var(--ink);
+}
+.draw-tool {
+  padding: 0.35rem 0.7rem;
+  font-size: 0.85rem;
+}
+
+.draw-sidebar {
+  grid-area: side;
+  display: grid;
+  grid-template-rows: auto minmax(6rem, 1fr) auto;
+  gap: 0.6rem;
+  min-height: 0;
+}
+.draw-sidebar[data-on="false"] {
+  display: none;
+}
+
+.draw-scores {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.2rem;
+}
+.draw-score {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: 6px;
+  background: var(--bg);
+  font-size: 0.9rem;
+}
+.draw-score[data-me="true"] {
+  outline: 1px solid var(--line);
+}
+.draw-score[data-drawer="true"] .draw-score-name::before {
+  content: "\270e "; /* a pencil, for whoever holds the pen */
+}
+.draw-score[data-solved="true"] {
+  color: var(--accent);
+}
+.draw-score-value {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+}
+
+.draw-log {
+  list-style: none;
+  margin: 0;
+  padding: 0.3rem;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  font-size: 0.9rem;
+}
+.draw-log-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.15rem 0.25rem;
+}
+.draw-log-name {
+  font-weight: 600;
+  flex-shrink: 0;
+}
+.draw-log-name::after {
+  content: ":";
+}
+.draw-log-row[data-correct="true"] {
+  color: var(--accent);
+}
+.draw-log-row[data-correct="true"] .draw-log-name::after {
+  content: "";
+}
+.draw-log-text {
+  overflow-wrap: anywhere;
+}
+.draw-log-tick {
+  font-weight: 700;
+}
+.draw-accept {
+  margin-left: auto;
+  padding: 0.1rem 0.45rem;
+  font-size: 0.75rem;
+  flex-shrink: 0;
+}
+/* The log is append-only; when it is no longer the drawer's live round, every
+   Accept button in it hides at once rather than being re-rendered away. */
+.draw-log:not([data-live="true"]) .draw-accept {
+  display: none;
+}
+
+.draw-guess {
+  display: none;
+  gap: 0.4rem;
+}
+.draw-guess[data-on="true"] {
+  display: flex;
+}
+.draw-guess-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.draw-aside {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.85rem;
+  text-align: center;
+}
+.draw-aside[data-on="false"] {
+  display: none;
+}
