@@ -40,7 +40,8 @@ pip install -r requirements.txt pytest httpx
 
 python -m pytest -q                 # tests
 node --test tests/*.test.mjs        # ...and the renderer's, which pytest cannot see
-pre-commit run --all-files          # ruff, gitleaks, formatting
+pre-commit run --all-files          # ruff, gitleaks, formatting -- NOT commit-msg
+git config core.hooksPath .githooks     # once per clone: makes both gates live
 uvicorn waiting_games.main:app --reload --port 8080
 docker build -t waiting-games .
 ```
