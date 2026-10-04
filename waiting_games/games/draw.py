@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import random
 
+from .. import words
 from .base import InvalidMove, RealTimeGame, Result
 
 TICK_HZ = 10.0
@@ -176,7 +177,7 @@ class Draw(RealTimeGame):
             chosen = list(self._forced_words[:n])
             self._forced_taken = n
         else:
-            chosen = self.rng.sample(WORDS, n)
+            chosen = self.rng.sample(words.pool(WORDS), n)
 
         self.words = chosen
         self.scores = [0] * n
@@ -365,7 +366,7 @@ class Draw(RealTimeGame):
             word = self._forced_words[self._forced_taken]
             self._forced_taken += 1
             return word
-        pool = [w for w in WORDS if w not in self.words]
+        pool = [w for w in words.pool(WORDS) if w not in self.words]
         return self.rng.choice(pool)
 
     # -- the clock -------------------------------------------------------

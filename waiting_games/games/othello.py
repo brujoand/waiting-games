@@ -93,6 +93,15 @@ class Othello(Game):
         for flip in flipped:
             self.board[flip] = MARKS[seat]
 
+    brief = (
+        "Place a disc so that it brackets a line of the opponent's discs, which "
+        "turn to your colour. Most discs at the end wins; corners cannot be "
+        "retaken. Cells are numbered 0-63, left to right, top to bottom."
+    )
+
+    def legal_moves(self, seat: int) -> list[dict]:
+        return [{"cell": cell} for cell in self._legal_cells(seat)]
+
     def _next_seat(self, seat: int) -> int:
         """Skip a player who cannot move. _result has already ruled out the case
         where NEITHER can, so there is always someone to hand the turn to."""

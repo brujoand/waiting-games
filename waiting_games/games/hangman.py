@@ -12,9 +12,12 @@ because this is the only game that has them.
 
 from __future__ import annotations
 
+import random
 import unicodedata
 
+from .. import words
 from .base import Game, InvalidMove, Result
+from .draw import WORDS
 
 # The alphabet is this game's piece set, like a board having 64 squares. It is
 # NOT a locale, and it must not depend on the word, for two separate reasons:
@@ -31,6 +34,10 @@ from .base import Game, InvalidMove, Result
 ALPHABET = "ABCDEFGHIJKLMNOPQRSTUVWXYZÆØÅ"
 MAX_WRONG = 7  # head, body, two arms, two legs, and the rope
 MIN_LENGTH, MAX_LENGTH = 3, 20
+
+# How many words a robot is offered when it is its turn to set one. It picks; it
+# does not invent. See legal_moves.
+WORD_CHOICES = 8
 
 CORRECT_LETTER = 1  # to the guesser
 GALLOWS = 3  # to the setter, if nobody solves it
@@ -73,6 +80,7 @@ class Hangman(Game):
         # What happened last round, so the table sees the result before the next
         # word is set rather than the board simply vanishing.
         self.previous: dict | None = None
+        self.rng = random.Random()
 
     def _on_start(self) -> None:
         self.points = [0] * len(self.players)
@@ -177,6 +185,28 @@ class Hangman(Game):
 
         if self.solved or self.hanged:
             self._finish_round()
+
+    brief = (
+        "One player sets a secret word and the others take turns guessing a letter. "
+        "`revealed` shows the word with `_` for letters not yet found; `wrong` is "
+        "the misses, and the round is lost at seven of them. Setting a word, pick "
+        "a hard one. Guessing, pick the likeliest letter."
+    )
+
+    def legal_moves(self, seat: int) -> list[dict]:
+        if self.phase == SETTING:
+            # A robot CHOOSES a word, from the same pool Draw deals from. Letting
+            # the model write one would put its text on every player's screen,
+            # and a word it merely picked has already been through words.parse --
+            # or was in the box to begin with.
+            fits = [
+                word
+                for word in words.pool(WORDS)
+                if MIN_LENGTH <= len(word) <= MAX_LENGTH
+                and all(letter in ALPHABET for letter in normalise(word))
+            ]
+            return [{"word": word} for word in self.rng.sample(fits, WORD_CHOICES)]
+        return [{"letter": letter} for letter in ALPHABET if letter not in self.guessed]
 
     def _result(self) -> Result | None:
         if self.round < self.rounds:

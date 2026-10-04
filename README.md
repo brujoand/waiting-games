@@ -41,12 +41,40 @@ Behaviour is set entirely through environment variables, all optional:
 | `SECURE_COOKIE` | off | Set to `1` when serving over HTTPS, so the session cookie is marked `Secure` and never travels in the clear. Off by default because a `Secure` cookie is silently dropped over plain HTTP, which would make the app impossible to log in to on `http://localhost`. |
 | `TRUSTED_PROXY_AUTH` | off | Set to `1` to take player identity from an authenticating reverse proxy's `X-Auth-Sub` / `X-Auth-Email` headers instead of the built-in name-claim. **Only safe** behind a proxy that authenticates *and* a network policy that makes that proxy the sole thing able to reach this process — otherwise anyone who can send a header is anyone they like. Leave it off unless you have both. |
 
+| `LLM_BASE_URL` | unset | The base URL of an OpenAI-compatible chat API, up to and including the version: `http://llm.example.com:8000/v1`. vLLM, llama.cpp and Ollama all serve one. Set it and the host of a waiting game can put a robot in an empty seat, and the word games get more words. Unset, there are no robots and this server never makes an outgoing request. |
+| `LLM_MODEL` | unset | The model name to ask for. Required when `LLM_BASE_URL` is set; the server refuses to start with one and not the other. |
+| `LLM_API_KEY` | unset | Sent as a bearer token, if the endpoint wants one. |
+
 For example, running behind a TLS-terminating proxy:
 
 ```bash
 docker run --rm -p 8080:8080 -e SECURE_COOKIE=1 \
   ghcr.io/brujoand/waiting-games:1.0.0
 ```
+
+### A robot to play against
+
+Most of these games need somebody else. Point the server at a language model and
+the host of a waiting game gets an **Add a robot** button:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e LLM_BASE_URL=http://llm.example.com:8000/v1 -e LLM_MODEL=your-model \
+  ghcr.io/brujoand/waiting-games:1.0.0
+```
+
+A robot sits at Tic-Tac-Toe, Connect Four, Othello, Nim, Dots and Boxes, Hangman
+and Battleship. It is not a strong player: a language model loses Connect Four to
+a few lines of search. It is there so that one person can play.
+
+The model never writes a move. It is shown what its seat can see and a numbered
+list of the legal moves, and its reply is read for a number. If it is slow, down
+or talking nonsense, the robot plays a legal move at random, so a table never
+waits on it.
+
+At startup the same model is asked for extra words for Draw and Hangman. Only a
+reply line that is a single plain lowercase word is kept, but nothing checks what
+the word *means*: the deck is as family-friendly as the model you point it at.
 
 ### I Spy needs a secure context
 

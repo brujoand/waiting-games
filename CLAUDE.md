@@ -63,6 +63,9 @@ and arithmetic that went wrong — and this is what tells them apart.
   the platform owns seats, turn order, the start gate and the clock; a subclass
   owns the board and the rules.
 - `waiting_games/main.py` — HTTP + WebSocket endpoints.
+- `waiting_games/llm.py`, `bots.py`, `words.py` — an optional language model
+  (`LLM_BASE_URL`, `LLM_MODEL`), the robot it plays as, and the words it writes
+  for Draw and Hangman. Unset, none of it exists and nothing leaves the process.
 - `waiting_games/static/` — the frontend. `games/<key>.js` renders game `<key>`.
 - `waiting_games/static/vendor/` — MediaPipe's object detector, which I Spy plays
   with. **Not in git**: 14MB of wasm and weights, fetched by
@@ -165,6 +168,15 @@ Two things to get right:
   inside your own width, and the snake is running parallel to itself and *inside*
   itself — geometry, not a bug. `MIN_TURN` is the four-direction version of slither's
   turn-rate cap, and it is *soft*: a turn asked for too early is remembered, not refused.
+
+- **A robot picks a move; it never writes one.** A turn-based game seats a robot
+  by overriding `legal_moves(seat)`, and that list is the robot's whole safety: the
+  model is shown `view(seat)` and the list, numbered, and its reply is read for a
+  number. Do not add a path where model text becomes a move, a word or anything a
+  player sees without passing through a list or a pattern the server wrote. Every
+  move on the list must be one `_apply` accepts — `tests/test_bots.py` plays each
+  game to the end on nothing else. The address of the model is deployment config
+  and never appears in this repo.
 
 A game's `key` is also its renderer's filename. Renaming one renames both.
 

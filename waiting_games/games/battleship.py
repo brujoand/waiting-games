@@ -159,6 +159,23 @@ class Battleship(Game):
 
         self.shots[seat][cell] = MISS
 
+    brief = (
+        "Sink the enemy fleet by firing at cells of a 10x10 grid, numbered 0-99 "
+        "left to right, top to bottom. Ships lie in straight lines, so after a hit "
+        "fire at a neighbouring cell."
+    )
+
+    def legal_moves(self, seat: int) -> list[dict]:
+        if self.phase == PLACING:
+            # The fleet it was dealt is already a random one. Shuffling it again
+            # would be a legal move and not a different one.
+            return [{"action": "ready"}]
+        return [
+            {"cell": cell}
+            for cell in range(SIZE * SIZE)
+            if cell not in self.shots[seat]
+        ]
+
     def _result(self) -> Result | None:
         if self.phase != FIRING:
             return None

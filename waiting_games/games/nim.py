@@ -42,6 +42,18 @@ class Nim(Game):
         self.piles[pile] -= count
         self.took = seat
 
+    brief = (
+        "Take any number of matches from ONE pile. "
+        "Whoever takes the last match on the table wins."
+    )
+
+    def legal_moves(self, seat: int) -> list[dict]:
+        return [
+            {"pile": pile, "count": count}
+            for pile, size in enumerate(self.piles)
+            for count in range(1, size + 1)
+        ]
+
     def _result(self) -> Result | None:
         if any(self.piles):
             return None

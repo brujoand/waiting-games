@@ -18,6 +18,7 @@ const toastEl = document.getElementById("toast");
 const state = {
   me: null,
   authMode: "cookie", // "cookie" | "proxy" -- from /api/config, before anything renders
+  bots: false, // whether this server has a robot to put in an empty seat
   games: [],
   sessions: [],
   game: null, // the current game's state, when we are in one
@@ -47,6 +48,7 @@ let gameModule = null;
 let mountedRound = null;
 let statusEl = null;
 let startButtonEl = null;
+let botButtonEl = null;
 let rematchButtonEl = null;
 let boardEl = null;
 // The board's <h2>. mountGame() sets it ONCE, so without a handle it would keep
@@ -543,6 +545,7 @@ function unmountGame() {
   mountedRound = null;
   statusEl = null;
   startButtonEl = null;
+  botButtonEl = null;
   rematchButtonEl = null;
   boardEl = null;
   titleEl = null;
@@ -587,6 +590,7 @@ function paintChrome(game) {
   // Whether the host may start, and whether there is anything to replay, are both
   // state-dependent -- so re-evaluate them on every push.
   startButtonEl.hidden = !mayStart(game);
+  botButtonEl.hidden = !mayAddBot(game);
   rematchButtonEl.hidden = !mayRematch(game);
   titleEl.textContent = gameTitle(game.game);
   statusEl.textContent = describeGame(game);
@@ -636,6 +640,20 @@ function mayStart(game) {
   return game.status === "waiting" && game.hostSub === state.me.sub && game.canStart;
 }
 
+// A robot for the empty seat: the host's to ask for, while the table is still
+// waiting, and only where there is one to be had. Two separate facts decide that --
+// whether this SERVER has a model behind it (/api/config) and whether this GAME can
+// seat a robot at all (the catalogue) -- and the server checks both again anyway.
+function mayAddBot(game) {
+  return (
+    state.bots &&
+    game.status === "waiting" &&
+    game.joinable &&
+    game.hostSub === state.me.sub &&
+    Boolean(state.games.find((entry) => entry.key === game.game)?.bots)
+  );
+}
+
 // Anyone who PLAYED may ask for another round -- the server agrees, and it is
 // usually the loser who wants one. Seat 0 is a real seat and is also falsy, so
 // this cannot be `!game.seat`; a spectator's seat is null, and they only watch.
@@ -659,6 +677,15 @@ async function mountGame(game) {
   startButtonEl.onclick = async () => {
     try {
       await api(`/api/sessions/${game.id}/start`, { method: "POST" });
+    } catch (error) {
+      toast(error.message);
+    }
+  };
+
+  botButtonEl = el("button", { textContent: t("ui.add_bot") });
+  botButtonEl.onclick = async () => {
+    try {
+      await api(`/api/sessions/${game.id}/bot`, { method: "POST" });
     } catch (error) {
       toast(error.message);
     }
@@ -690,6 +717,7 @@ async function mountGame(game) {
       board,
       el("div", { className: "row" }, [
         startButtonEl,
+        botButtonEl,
         rematchButtonEl,
         el("button", { textContent: t("ui.back_to_lobby"), onclick: () => go("#/") }),
       ]),
@@ -817,7 +845,9 @@ async function main() {
   // Which identity model this deployment uses, before anything is rendered. In
   // proxy mode a 401 means the proxy did not inject its headers -- a name form
   // there would be a lie, and would 404 on submit.
-  state.authMode = (await api("/api/config")).authMode;
+  const config = await api("/api/config");
+  state.authMode = config.authMode;
+  state.bots = Boolean(config.bots);
 
   try {
     state.me = await api("/api/me"); // a live cookie, or the proxy's headers
