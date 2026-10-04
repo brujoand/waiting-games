@@ -204,6 +204,30 @@ class Game(ABC):
         """
         return self.public_state()
 
+    # A sentence or two for a robot that has never seen this game: what winning
+    # is, and what the fields of a move mean. Read by a model, never by a player.
+    brief: str = ""
+
+    def legal_moves(self, seat: int) -> list[dict] | None:
+        """Every move `seat` may make right now, or None if this game cannot say.
+
+        Answering is what lets a robot sit down (see bots.py), and it is the whole
+        of the robot's safety: the model is shown this list and asked for a
+        NUMBER, so the worst thing it can possibly say is a legal move. A game that
+        does not override this simply has no robots, which is the right answer for
+        anything real-time -- a model takes seconds and a tick takes a fifteenth
+        of one.
+
+        Only ever asked about a seat that _may_move, in a game that has started
+        and is not over. Every move returned must be one _apply accepts:
+        test_bots.py plays each game to the end on nothing but this list.
+        """
+        return None
+
+    @classmethod
+    def bot_capable(cls) -> bool:
+        return cls.legal_moves is not Game.legal_moves
+
     def tick(self, dt: float) -> None:
         """Advance the simulation. Only called when tick_hz is set.
 

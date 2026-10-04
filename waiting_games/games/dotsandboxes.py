@@ -77,6 +77,20 @@ class DotsAndBoxes(Game):
         # Remembered for _next_seat, which runs straight after this.
         self.claimed_a_box = self._claim_boxes(seat) > 0
 
+    brief = (
+        "Draw one line. Drawing the fourth side of a box claims it and gives you "
+        "another turn; most boxes wins. Avoid drawing the THIRD side of a box, "
+        "which hands it to the next player."
+    )
+
+    def legal_moves(self, seat: int) -> list[dict]:
+        return [
+            {"kind": kind, "index": index}
+            for kind in ("h", "v")
+            for index, drawn in enumerate(self._edges(kind))
+            if not drawn
+        ]
+
     def _next_seat(self, seat: int) -> int:
         """Close a box and it stays your turn."""
         if self.claimed_a_box:

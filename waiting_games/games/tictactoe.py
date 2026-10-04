@@ -35,6 +35,14 @@ class TicTacToe(Game):
             raise InvalidMove("tictactoe.cell_taken")
         self.board[cell] = MARKS[seat]
 
+    brief = (
+        "Three of your mark in a row, column or diagonal wins. "
+        "Cells are numbered 0-8, left to right, top to bottom."
+    )
+
+    def legal_moves(self, seat: int) -> list[dict]:
+        return [{"cell": cell} for cell, mark in enumerate(self.board) if mark is None]
+
     def _result(self) -> Result | None:
         for a, b, c in LINES:
             mark = self.board[a]

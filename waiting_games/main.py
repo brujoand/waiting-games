@@ -31,6 +31,7 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from starlette.requests import HTTPConnection
 
+from . import words
 from .auth import (
     COOKIE_NAME,
     SESSION_TTL,
@@ -41,7 +42,9 @@ from .auth import (
     ProxyIdentity,
     Sessions,
 )
+from .bots import Bots
 from .games import GAMES, InvalidMove
+from .llm import LLM, config_from_env
 from .lobby import Lobby
 
 STATIC = Path(__file__).parent / "static"
@@ -70,6 +73,14 @@ lobby = Lobby()
 sessions = Sessions()  # unused, and permanently empty, in proxy mode
 
 IDENTITY: Identity = ProxyIdentity() if TRUSTED_PROXY_AUTH else CookieIdentity(sessions)
+
+# A language model to play against: LLM_BASE_URL and LLM_MODEL, and LLM_API_KEY if
+# it wants one. Unset, there are no robots and no generated words, and this server
+# never makes an outgoing request -- which is the default, because most people who
+# pull this image do not have a GPU behind it. See llm.py, bots.py, words.py.
+LLM_CONFIG = config_from_env()
+model: LLM | None = LLM(LLM_CONFIG) if LLM_CONFIG else None
+bots: Bots | None = Bots(lobby, model) if model else None
 
 
 # A real-time client sends a direction only when it CHANGES, so an honest one is
@@ -101,15 +112,22 @@ class TokenBucket:
 
 @contextlib.asynccontextmanager
 async def lifespan(_: FastAPI):
-    reaper = asyncio.create_task(reap_forever())
+    background = [asyncio.create_task(reap_forever())]
+    if model is not None:
+        # Not awaited: a model still loading its weights must not hold up a server
+        # that is perfectly able to deal the words it shipped with.
+        background.append(asyncio.create_task(words.generate_forever(model)))
     try:
         yield
     finally:
-        reaper.cancel()
-        with contextlib.suppress(asyncio.CancelledError):
-            await reaper
+        for task in background:
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         # Every live game's clock goes with us.
         lobby.shutdown()
+        if model is not None:
+            await model.aclose()
 
 
 async def reap_forever() -> None:
@@ -196,7 +214,13 @@ async def config() -> dict:
     already the unauthenticated "what is this server" endpoint, and the badge has
     to render on the sign-in screen too.
     """
-    return {"authMode": IDENTITY.mode, "version": VERSION}
+    return {
+        "authMode": IDENTITY.mode,
+        "version": VERSION,
+        # Whether there is anything to put in an empty seat. The browser offers a
+        # robot only when this says so; the endpoint refuses one regardless.
+        "bots": bots is not None,
+    }
 
 
 @app.post("/api/login")
@@ -246,6 +270,9 @@ async def games() -> list[dict]:
             "category": g.category,
             "minPlayers": g.min_players,
             "maxPlayers": g.max_players,
+            # Whether a robot can sit at this game at all. A property of the game,
+            # not of the deployment: /api/config says whether there ARE robots.
+            "bots": g.bot_capable(),
         }
         for g in GAMES.values()
     ]
@@ -279,6 +306,23 @@ async def join_session(
         raise HTTPException(status_code=400, detail=exc.as_dict()) from exc
     # Filling up auto-starts the game, which for Snake or Pong means the clock
     # starts too. launch() is a no-op for anything turn-based.
+    await lobby.launch(session)
+    await lobby.broadcast_state(session)
+    await lobby.broadcast_lobby()
+    return session.summary()
+
+
+@app.post("/api/sessions/{session_id}/bot")
+async def add_bot(session_id: str, player: Player = Depends(current_player)) -> dict:
+    """The host puts a robot in an empty seat. From there it is a join like any
+    other: a full table starts, and the broadcast below is what tells the robot
+    it may have a move to make -- see Lobby.after_change."""
+    try:
+        if bots is None:
+            raise InvalidMove("lobby.no_bots")
+        session = lobby.add_bot(session_id, player)
+    except InvalidMove as exc:
+        raise HTTPException(status_code=400, detail=exc.as_dict()) from exc
     await lobby.launch(session)
     await lobby.broadcast_state(session)
     await lobby.broadcast_lobby()

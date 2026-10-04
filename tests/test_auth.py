@@ -760,6 +760,7 @@ def test_the_browser_is_told_which_mode_it_is_in(proxy_mode):
         assert client.get("/api/config").json() == {
             "authMode": "proxy",
             "version": VERSION,
+            "bots": False,
         }
 
 
@@ -768,6 +769,7 @@ def test_the_browser_is_told_about_cookie_mode_too():
         assert client.get("/api/config").json() == {
             "authMode": "cookie",
             "version": VERSION,
+            "bots": False,
         }
 
 

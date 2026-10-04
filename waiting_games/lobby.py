@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import secrets
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 from .auth import Player
@@ -84,6 +85,12 @@ class Session:
     # than waiting -- see Lobby.stream.
     sending: set = field(default_factory=set)
 
+    # The seats a robot is sitting in, by sub, and the task that is playing them.
+    # A robot is in `players` like anybody else -- the engine cannot tell, and must
+    # not be able to -- so this set is the only thing that knows. See bots.py.
+    bots: set[str] = field(default_factory=set)
+    bot_task: asyncio.Task | None = None
+
     @property
     def status(self) -> str:
         if self.engine.over:
@@ -131,7 +138,9 @@ class Session:
             "over": engine.over,
             "winner": engine.winner,
             "draw": engine.over and engine.winner is None,
-            "connected": [sub for sub, _ in self.sockets],
+            # A robot has no socket and is never away. Leave it out and the status
+            # line tells the table it is waiting for the robot to come back.
+            "connected": [sub for sub, _ in self.sockets] + sorted(self.bots),
             # The clock is the platform's, so it is the platform that reports it.
             # A real-time game's renderer needs BOTH: the rate to know how long a
             # tick lasts, and the index to know how many of them a state is worth.
@@ -180,6 +189,11 @@ class Lobby:
         # a fire-and-forget one can be collected before it has run; holding it
         # here is what keeps it alive. See drop().
         self.evictions: set[asyncio.Task] = set()
+        # Told about every board that has just been sent out. This is how a robot
+        # finds out it is its turn: bots.py sets it, and nothing in here knows
+        # what it does. Hung on fanout() because every change to a turn-based game
+        # ends in one, so there is no move, join, start or rematch that can forget.
+        self.after_change: Callable[[Session], None] | None = None
 
     # -- sessions --------------------------------------------------------
 
@@ -231,6 +245,33 @@ class Lobby:
         # Nobody else can get in, so there is nothing left to wait for.
         if session.engine.is_full:
             self._start(session)
+        return session
+
+    def add_bot(self, session_id: str, player: Player) -> Session:
+        """The host fills an empty seat with a robot.
+
+        The host, because it is their table, and only while it is waiting, because
+        that is the only time anybody sits down. What a robot may sit at is the
+        GAME's to say: one that cannot list its legal moves has nothing a robot
+        could choose from.
+
+        The sub is random rather than `bot-1`. In proxy mode a sub is whatever the
+        identity provider issued, and a player whose sub happened to be the
+        robot's would be seated in its chair.
+        """
+        session = self.require(session_id)
+        if session.host != player.sub:
+            raise InvalidMove("lobby.not_host")
+        if not session.engine.bot_capable():
+            raise InvalidMove("lobby.bot_cannot_play")
+
+        number = len(session.bots) + 1
+        bot = Player(
+            sub=f"bot-{secrets.token_urlsafe(8)}",
+            name="Robot" if number == 1 else f"Robot {number}",
+        )
+        self.join(session_id, bot)  # refuses a started or a full game, as for anyone
+        session.bots.add(bot.sub)
         return session
 
     def begin(self, session_id: str, player: Player) -> Session:
@@ -336,6 +377,9 @@ class Lobby:
         is already on its way, and looking the seat up blindly would KeyError and
         tear down the handler of whoever happened to be moving.
         """
+        if self.after_change is not None:
+            self.after_change(session)
+
         entries = [
             (sub, websocket)
             for sub, websocket in session.sockets
@@ -525,6 +569,9 @@ class Lobby:
 
         if session.tick_task is not None:
             session.tick_task.cancel()
+        # The same goes for a robot halfway through thinking about its move.
+        if session.bot_task is not None:
+            session.bot_task.cancel()
 
         # Hanging up has to await a send, and drop() is called from synchronous
         # code (create, reap). Off to the loop with it -- and if there is no loop

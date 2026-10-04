@@ -44,6 +44,17 @@ class ConnectFour(Game):
         self.last = row * COLS + col
         self.board[self.last] = MARKS[seat]
 
+    brief = (
+        "Drop a disc down a column; it lands on the lowest empty cell. Four of your "
+        "mark in a line wins. The board is a flat list, row 0 at the top, "
+        "seven cells to a row."
+    )
+
+    def legal_moves(self, seat: int) -> list[dict]:
+        return [
+            {"column": col} for col in range(COLS) if self._landing_row(col) is not None
+        ]
+
     def _four_in_a_row(self) -> int | None:
         for row in range(ROWS):
             for col in range(COLS):
